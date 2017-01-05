@@ -1,4 +1,5 @@
 STATIC ?= 0
+DEBUG ?= 0
 
 
 # Submodules
@@ -17,6 +18,15 @@ ifeq (${STATIC}, 1)
 	LDFLAGS += -static -static-libgcc -pthread -lhts -lz
 else
 	LDFLAGS += -lhts -lz -Wl,-rpath,${HTSLIB_ROOT}
+endif
+ifeq (${DEBUG}, 1)
+	CXXFLAGS += -g -O0 -fno-inline -DDEBUG
+else ifeq (${DEBUG}, 2)
+	CXXFLAGS += -g -O0 -fno-inline -DPROFILE
+	LDFLAGS += -lprofiler -ltcmalloc
+else
+	# DNDEBUG removes the macro "assert" completely; not used in my code
+	CXXFLAGS += -O3 -DNDEBUG 
 endif
 
 
