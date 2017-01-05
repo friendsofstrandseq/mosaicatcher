@@ -1,5 +1,5 @@
 /*
-opyright (C) 2016 Sascha Meiers
+Copyright (C) 2016 Sascha Meiers
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
@@ -16,8 +16,12 @@ Contact: Sascha Meiers (meiers@embl.de)
 */
 
 #include <iostream>
+#include <htslib/sam.h>
 
 int main(){
-    std::cout << "Hello world" << std::endl;
+    std::string ww("data/HG00512_III_007.bam");
+    samFile* wwfile = sam_open(ww.c_str(), "r");
+
+    std::cout << ww << std::endl;
     return 0;
 }
