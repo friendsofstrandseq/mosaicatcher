@@ -109,7 +109,7 @@ d = d[grepl('^chr[0-9X]+$', chrom),]
 d[, chrom := factor(chrom, levels=paste0('chr', c(1:22,'X')), ordered = T)]
 
 # Normalize per sample
-nps <- norm_per_sample(d,1e6)
+nps <- norm_per_sample(d, 3e5)
 
 # Normalize by bin
 npb <- norm_per_bin(nps$data, minMedian = 0.05, maxMedian = 2.5)
