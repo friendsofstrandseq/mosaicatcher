@@ -5,11 +5,12 @@ DEBUG ?= 0
 # Submodules
 PWD = $(shell pwd)
 HTSLIB_ROOT ?= ${PWD}/src/htslib/
+BOOST_ROOT ?= ${PWD}/src/boost/
 
 
 # Flags
 CXX = g++
-CXXFLAGS += -isystem ${HTSLIB_ROOT} -std=c++11 -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS
+CXXFLAGS += -isystem ${HTSLIB_ROOT} -isystem ${BOOST_ROOT} -std=c++11 -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS
 LDFLAGS += -L${HTSLIB_ROOT}
 
 
@@ -33,10 +34,11 @@ endif
 # Sources
 MAINSOURCES = src/main.cpp $(wildcard src/*.h)
 HTSLIBSOURCES = $(wildcard src/htslib/*.c) $(wildcard src/htslib/*.h)
+BOOSTSOURCES = $(wildcard src/boost/libs/iostreams/include/boost/iostreams/*.hpp)
 
 
 # Targets
-TARGETS = .htslib src/main
+TARGETS = .htslib .boost src/main
 
 all: $(TARGETS)
 
@@ -46,6 +48,10 @@ src/main: $(MAINSOURCES)
 .htslib: $(HTSLIBSOURCES)
 	cd src/htslib && make && make lib-static && cd ../../ && touch .htslib
 
+.boost: $(BOOSTSOURCES)
+	cd src/boost && ./bootstrap.sh --prefix=${PWD}/src/boost --without-icu --with-libraries=iostreams,filesystem,system,program_options,date_time && ./b2 && ./b2 headers && cd ../../ && touch .boost
+
 clean:
 	cd src/htslib && make clean
+	cd src/boost && ./b2 --clean-all
 	rm -f $(TARGETS) $(TARGETS:=.o)

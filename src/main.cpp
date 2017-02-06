@@ -20,6 +20,7 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include <vector>
 #include <htslib/sam.h>
 
+#include "utils.hpp"
 
 /*
     Assumptions:
@@ -53,6 +54,11 @@ inline uint32_t alignmentLength(bam1_t const* rec) {
 
 int main(int argc, char **argv)
 {
+    // Test: median
+    std::vector<int> test {1,2,2,2,2,2,2,4,8,20};
+    std::cout << median(test) << std::endl;
+    // End Test: median
+
     // Read arguments
     Conf c;
     c.f_out = "out.txt";
