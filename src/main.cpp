@@ -105,15 +105,15 @@ int main(int argc, char **argv)
     TIndex idx;
     samfile.resize(c.f_in.size());
     idx.resize(c.f_in.size());
-    for(unsigned file_c = 0; file_c < c.f_in.size(); ++file_c) {
-        samfile[file_c] = sam_open(c.f_in[file_c].string().c_str(), "r");
-        if (samfile[file_c ] == NULL) {
-            std::cerr << "Fail to open file " << c.f_in[file_c].string() << std::endl;
+    for(unsigned i = 0; i < c.f_in.size(); ++i) {
+        samfile[i] = sam_open(c.f_in[i].string().c_str(), "r");
+        if (samfile[i ] == NULL) {
+            std::cerr << "Fail to open file " << c.f_in[i].string() << std::endl;
             return 1;
         }
-        idx[file_c] = sam_index_load(samfile[file_c], c.f_in[file_c].string().c_str());
-        if (idx[file_c] == NULL) {
-            std::cerr << "Fail to open index for " << c.f_in[file_c].string() << std::endl;
+        idx[i] = sam_index_load(samfile[i], c.f_in[i].string().c_str());
+        if (idx[i] == NULL) {
+            std::cerr << "Fail to open index for " << c.f_in[i].string() << std::endl;
             return 1;
         }
     }
@@ -124,24 +124,24 @@ int main(int argc, char **argv)
     std::vector<TGenomeCounts> counts;
     counts.resize(c.f_in.size());
 
-    for(unsigned file_c = 0; file_c < c.f_in.size(); ++file_c) {
-        std::cout << "Counting: " << c.f_in[file_c] << std::endl;
+    for(unsigned i = 0; i < c.f_in.size(); ++i) {
+        std::cout << "Counting: " << c.f_in[i] << std::endl;
 
         // todo: optimize. only few chroms will be used.
-        counts[file_c].resize(hdr->n_targets);
+        counts[i].resize(hdr->n_targets);
         for (int chr_idx = 0; chr_idx < hdr->n_targets; ++chr_idx) {
 
 
             if (hdr->target_len[chr_idx] < c.window) continue;
             int bins = hdr->target_len[chr_idx] / c.window + 1;
-            std::vector<Counter> & counter = counts[file_c][chr_idx];
+            std::vector<Counter> & counter = counts[i][chr_idx];
             counter.resize(bins, Counter());
 
-            hts_itr_t* iter = sam_itr_queryi(idx[file_c], chr_idx, 0,
+            hts_itr_t* iter = sam_itr_queryi(idx[i], chr_idx, 0,
                                              hdr->target_len[chr_idx]);
             bam1_t* rec = bam_init1();
 
-            while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+            while (sam_itr_next(samfile[i], iter, rec) >= 0) {
                 if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP |\
                         BAM_FSUPPLEMENTARY | BAM_FUNMAP))
                     continue;
@@ -170,7 +170,7 @@ int main(int argc, char **argv)
     // Print counts
     std::ofstream out(c.f_out.string());
     out << "chrom\tstart\tend\tsample\tw\tc" << std::endl;
-    for(unsigned file_c = 0; file_c < samfile.size(); ++file_c) {
+    for(unsigned i = 0; i < samfile.size(); ++i) {
         for (int chr_idx = 0; chr_idx < hdr->n_targets; ++chr_idx) {
 
             if (hdr->target_len[chr_idx] < c.window) continue; 
@@ -179,9 +179,9 @@ int main(int argc, char **argv)
             for (int bin = 0; bin < bins; ++bin) {
                 out << hdr->target_name[chr_idx];
                 out << "\t" << bin*1000000 << "\t" << (bin+1)*1000000;
-                out << "\t" << c.f_in[file_c];
-                out << "\t" << counts[file_c][chr_idx][bin].watson_count;
-                out << "\t" << counts[file_c][chr_idx][bin].crick_count;
+                out << "\t" << c.f_in[i];
+                out << "\t" << counts[i][chr_idx][bin].watson_count;
+                out << "\t" << counts[i][chr_idx][bin].crick_count;
                 out << std::endl;
             }
         }
@@ -191,9 +191,9 @@ int main(int argc, char **argv)
 
 
     // Close bam files
-    for(unsigned file_c = 0; file_c < c.f_in.size(); ++file_c) {
-        hts_idx_destroy(idx[file_c]);
-        sam_close(samfile[file_c]);
+    for(unsigned i = 0; i < c.f_in.size(); ++i) {
+        hts_idx_destroy(idx[i]);
+        sam_close(samfile[i]);
     }
 
 
