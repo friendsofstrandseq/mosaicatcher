@@ -10,15 +10,15 @@ BOOST_ROOT ?= ${PWD}/src/boost/
 
 # Flags
 CXX = g++
-CXXFLAGS += -isystem ${HTSLIB_ROOT} -isystem ${BOOST_ROOT} -std=c++11 -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS
-LDFLAGS += -L${HTSLIB_ROOT}
+CXXFLAGS += -fdiagnostics-color -isystem ${HTSLIB_ROOT} -isystem ${BOOST_ROOT} -std=c++11 -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS
+LDFLAGS += -L${HTSLIB_ROOT} -L${BOOST_ROOT}/stage/lib -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time
 
 
 # Additional flags for release/debug
 ifeq (${STATIC}, 1)
 	LDFLAGS += -static -static-libgcc -pthread -lhts -lz
 else
-	LDFLAGS += -lhts -lz -Wl,-rpath,${HTSLIB_ROOT}
+	LDFLAGS += -lhts -lz -Wl,-rpath,${HTSLIB_ROOT},-rpath,${BOOST_ROOT}/stage/lib
 endif
 ifeq (${DEBUG}, 1)
 	CXXFLAGS += -g -O0 -fno-inline -DDEBUG
@@ -27,7 +27,8 @@ else ifeq (${DEBUG}, 2)
 	LDFLAGS += -lprofiler -ltcmalloc
 else
 	# DNDEBUG removes the macro "assert" completely; not used in my code
-	CXXFLAGS += -O3 -DNDEBUG 
+	# Using O2 instead of O3 because of a segfault. Maybe relted to https://github.com/samtools/htslib/issues/400
+	CXXFLAGS += -O2 -DNDEBUG -fno-tree-vectorize
 endif
 
 
