@@ -33,7 +33,9 @@ Contact: Sascha Meiers (meiers@embl.de)
     Assumptions:
     - BAM files sorted & indexed
     - All mapped to same genome
-    - All belong to same sample (SM) and have distinct read groups (ID)
+    - currently: one cell per file.
+       - for the future: All belong to same sample (SM) and have distinct read groups (ID)
+       - for the even further future: different SMs allowed.
 */
 
 struct Conf {
@@ -41,13 +43,8 @@ struct Conf {
     boost::filesystem::path f_out;
     int minMapQual;
     unsigned int window;
+    std::string mode;
 };
-
-struct Counter {
-    unsigned int watson_count, crick_count;
-    Counter() : watson_count(0), crick_count(0) {};
-};
-
 
 
 inline uint32_t alignmentLength(bam1_t const* rec) {
@@ -70,6 +67,7 @@ int main(int argc, char **argv)
         ("mapq,q", boost::program_options::value<int>(&c.minMapQual)->default_value(50), "min mapping quality")
         ("window,w", boost::program_options::value<unsigned int>(&c.window)->default_value(1000000), "window size")
         ("out,o", boost::program_options::value<boost::filesystem::path>(&c.f_out)->default_value("out.txt"), "output file for counts")
+        ("mode,m", boost::program_options::value<std::string>(&c.mode)->default_value("all"), "what to compute (raw|norm)")
         ;
 
     boost::program_options::options_description hidden("Hidden options");
@@ -91,7 +89,7 @@ int main(int argc, char **argv)
 
 
     // Check command line arguments
-    if ((vm.count("help")) || (!vm.count("input-file"))) {
+    if ((vm.count("help")) || (!vm.count("input-file")) || !(c.mode == "norm" || c.mode == "raw")) {
         std::cout << "Usage: " << argv[0] << " [OPTIONS] <strand.seq1.bam> <strand.seq2.bam> ... <strand.seqN.bam>" << std::endl;
         std::cout << visible_options << "\n";
         return 1;
@@ -125,9 +123,7 @@ int main(int argc, char **argv)
     counts.resize(c.f_in.size());
 
     for(unsigned i = 0; i < c.f_in.size(); ++i) {
-        std::cout << "Counting: " << c.f_in[i] << std::endl;
-
-        // todo: optimize. only few chroms will be used.
+        std::cout << "Reading " << c.f_in[i].string() << std::endl;
         counts[i].resize(hdr->n_targets);
         for (int chr_idx = 0; chr_idx < hdr->n_targets; ++chr_idx) {
 
@@ -166,35 +162,141 @@ int main(int argc, char **argv)
             hts_itr_destroy(iter);
         }
     }
-
-    // Print counts
-    std::ofstream out(c.f_out.string());
-    out << "chrom\tstart\tend\tsample\tw\tc" << std::endl;
-    for(unsigned i = 0; i < samfile.size(); ++i) {
-        for (int chr_idx = 0; chr_idx < hdr->n_targets; ++chr_idx) {
-
-            if (hdr->target_len[chr_idx] < c.window) continue; 
-            int bins = hdr->target_len[chr_idx] / c.window + 1;
-
-            for (int bin = 0; bin < bins; ++bin) {
-                out << hdr->target_name[chr_idx];
-                out << "\t" << bin*1000000 << "\t" << (bin+1)*1000000;
-                out << "\t" << c.f_in[i];
-                out << "\t" << counts[i][chr_idx][bin].watson_count;
-                out << "\t" << counts[i][chr_idx][bin].crick_count;
-                out << std::endl;
-            }
-        }
-    }
-    out.close();
-
-
-
+    
     // Close bam files
     for(unsigned i = 0; i < c.f_in.size(); ++i) {
         hts_idx_destroy(idx[i]);
         sam_close(samfile[i]);
     }
+ 
+ 
+    // mode "raw": print raw counts
+    if (c.mode == "raw") {
+        
+        // Print counts
+        std::ofstream out(c.f_out.string());
+        out << "chrom\tstart\tend\tsample\tw\tc" << std::endl;
+        for(unsigned i = 0; i < samfile.size(); ++i) {
+            for (int chr_idx = 0; chr_idx < hdr->n_targets; ++chr_idx) {
+
+                if (hdr->target_len[chr_idx] < c.window) continue; 
+                int bins = hdr->target_len[chr_idx] / c.window + 1;
+
+                for (int bin = 0; bin < bins; ++bin) {
+                    out << hdr->target_name[chr_idx];
+                    out << "\t" << bin*c.window << "\t" << (bin+1)*c.window;
+                    out << "\t" << c.f_in[i].string();
+                    out << "\t" << counts[i][chr_idx][bin].watson_count;
+                    out << "\t" << counts[i][chr_idx][bin].crick_count;
+                    out << std::endl;
+                }
+            }
+        }
+        out.close();
+        return(0);
+    }
+    
+   
+    // Normalize by sample:
+    for(unsigned i = 0; i < c.f_in.size(); ++i) {
+        
+        TMedianAccumulator<unsigned int> med_acc;
+        for (std::vector<Counter> & count_chrom : counts[i])
+            for(Counter & count_bin : count_chrom)
+                med_acc(count_bin.watson_count + count_bin.crick_count);
+        unsigned int sample_median = boost::accumulators::median(med_acc);
+        
+        if (sample_median < 20) {
+            std::cout << "Ignoring " << c.f_in[i].string() << " due to too few reads. Consider increasing window size." << std::endl;
+            continue;
+        }
+        
+        for (std::vector<Counter> & count_chrom : counts[i]) {
+            for(Counter & count_bin : count_chrom) {
+                count_bin.watson_norm = count_bin.watson_count / (double)sample_median;
+                count_bin.crick_norm  = count_bin.crick_count  / (double)sample_median;
+            }
+        }
+    }
+
+    // To do: How to handle samples that are kicked out?
+
+    
+    // Calculate median per bin:
+    std::vector<std::vector<double> > bin_medians(counts[0].size());
+    for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom)
+        bin_medians[chrom] = std::vector<double>(counts[0][chrom].size(), 1);
+    
+    if (c.f_in.size() >= 3) {
+        for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
+            if (counts[0][chrom].size() < 1) continue;
+            for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
+                
+                TMedianAccumulator<double> med_acc;
+                for(unsigned i = 0; i < c.f_in.size(); ++i) {
+                    Counter & c = counts[i][chrom][bin];
+                    med_acc(c.watson_norm + c.crick_norm);
+                }
+                bin_medians[chrom][bin] = boost::accumulators::median(med_acc);
+            }
+        }
+    } else {
+        std::cout << "Normalizaiton per bin is skipped: too few sample" << std::endl;
+    }
+    
+    
+    // Blacklist bins with too low read count:
+    for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
+        if (counts[0][chrom].size() < 1) continue;
+        for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
+            if (bin_medians[chrom][bin] < 0.1)
+                std::cout << "Black list chrom_id " << chrom << " bin " << bin << std::endl;
+        }
+    }
+    
+    // Normalize per bin
+    for(unsigned i = 0; i < c.f_in.size(); ++i) {
+        for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
+            if (counts[0][chrom].size() < 1) continue;
+            for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
+                Counter & c = counts[i][chrom][bin];
+                c.watson_norm = c.watson_norm / bin_medians[chrom][bin];
+                c.crick_norm  = c.crick_norm /  bin_medians[chrom][bin];
+            }
+        }
+    }
+
+
+
+    // mode "norm": print normalized counts
+    if (c.mode == "norm") {
+        
+        // Print counts
+        std::ofstream out(c.f_out.string());
+        out << "chrom\tstart\tend\tsample\tw\tc" << std::endl;
+        for(unsigned i = 0; i < samfile.size(); ++i) {
+            for (int chr_idx = 0; chr_idx < hdr->n_targets; ++chr_idx) {
+
+                if (hdr->target_len[chr_idx] < c.window) continue; 
+                int bins = hdr->target_len[chr_idx] / c.window + 1;
+
+                for (int bin = 0; bin < bins; ++bin) {
+                    out << hdr->target_name[chr_idx];
+                    out << "\t" << bin*c.window << "\t" << (bin+1)*c.window;
+                    out << "\t" << c.f_in[i].string();
+                    out << "\t" << counts[i][chr_idx][bin].watson_norm;
+                    out << "\t" << counts[i][chr_idx][bin].crick_norm;
+                    out << std::endl;
+                }
+            }
+        }
+        out.close();
+        return(0);
+    } 
+
+
+
+
 
 
     return 0;

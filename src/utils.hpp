@@ -22,12 +22,13 @@ Contact: Sascha Meiers (meiers@embl.de)
 
 
 
+struct Counter {
+    unsigned int watson_count, crick_count;
+    double watson_norm, crick_norm;
+    Counter() : watson_count(0), crick_count(0), watson_norm(0), crick_norm(0) {};
+};
 
-template <typename T> 
-T median(std::vector<T> const & vec) 
-{
-    using namespace boost::accumulators;
-    accumulator_set<T, stats<tag::median> > acc;
-    for(T x : vec) acc(x);
-    return (boost::accumulators::median(acc));
-}
+
+template <typename TReturn>
+using TMedianAccumulator = boost::accumulators::accumulator_set<TReturn, boost::accumulators::stats<boost::accumulators::tag::median> >;
+
