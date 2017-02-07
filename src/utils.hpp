@@ -22,6 +22,25 @@ Contact: Sascha Meiers (meiers@embl.de)
 
 
 
+struct Conf {
+    std::vector<boost::filesystem::path> f_in;
+    boost::filesystem::path f_out;
+    int minMapQual;
+    unsigned int window;
+    std::string mode;
+};
+
+
+inline uint32_t alignmentLength(bam1_t const* rec) {
+    uint32_t* cigar = bam_get_cigar(rec);
+    uint32_t alen = 0;
+    for (std::size_t i = 0; i < rec->core.n_cigar; ++i)
+      if (bam_cigar_op(cigar[i]) == BAM_CMATCH) alen+=bam_cigar_oplen(cigar[i]);
+    return alen;
+  }
+
+
+
 struct Counter {
     unsigned int watson_count, crick_count;
     double watson_norm, crick_norm;
@@ -31,4 +50,6 @@ struct Counter {
 
 template <typename TReturn>
 using TMedianAccumulator = boost::accumulators::accumulator_set<TReturn, boost::accumulators::stats<boost::accumulators::tag::median> >;
+
+
 
