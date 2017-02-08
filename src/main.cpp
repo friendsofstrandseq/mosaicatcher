@@ -121,12 +121,13 @@ int main(int argc, char **argv)
                     continue;
 
                 int32_t pos = rec->core.pos + alignmentLength(rec)/2;
-                if (rec->core.flag & BAM_FREAD1) 
+                if (rec->core.flag & BAM_FREAD2) 
                     if (rec->core.flag & BAM_FREVERSE) 
                         ++( counter[(int) (pos / conf.window)].crick_count );
                     else 
                         ++( counter[(int) (pos / conf.window)].watson_count );
-                else
+                // Crick = + strand, watson = - strand
+                else // also for unpaired reads
                     if (rec->core.flag & BAM_FREVERSE) 
                         ++( counter[(int) (pos / conf.window)].watson_count );
                     else 
