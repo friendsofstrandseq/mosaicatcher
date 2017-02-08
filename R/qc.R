@@ -43,7 +43,7 @@ norm_per_bin <- function(dt, minMedian = 1e-5, maxMedian = 5, maxSD = Inf) {
     perBin <- dt %>% group_by(chrom, start, end) %>%
         summarize(mean = mean(w+c), median = median(w+c), sd = sd(w+c)) %>%
         as.data.table
-    plt <- ggplot(perBin) + aes(median) + geom_histogram(binwidth=1e-1) +
+    plt <- ggplot(perBin) + aes(median) + geom_histogram(binwidth=1e5) +
         ggtitle("median norm. cov per bin") + 
         geom_vline(xintercept = c(minMedian,maxMedian), col="red", linetype="dashed") +
         scale_x_continuous(label=comma) + xlab("number of reads per sample")
@@ -109,7 +109,7 @@ d = d[grepl('^chr[0-9X]+$', chrom),]
 d[, chrom := factor(chrom, levels=paste0('chr', c(1:22,'X')), ordered = T)]
 
 # Normalize per sample
-nps <- norm_per_sample(d, 3e5)
+nps <- norm_per_sample(d, 3e4)
 
 # Normalize by bin
 npb <- norm_per_bin(nps$data, minMedian = 0.05, maxMedian = 2.5)
