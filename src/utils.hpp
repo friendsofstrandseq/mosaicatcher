@@ -15,6 +15,10 @@ Contact: Sascha Meiers (meiers@embl.de)
 ============================================================================
 */
 
+#ifndef utils_hpp
+#define utils_hpp
+
+
 #include <boost/accumulators/accumulators.hpp>
 #include <boost/accumulators/statistics.hpp>
 #include <boost/accumulators/statistics/stats.hpp>
@@ -44,7 +48,8 @@ inline uint32_t alignmentLength(bam1_t const* rec) {
 struct Counter {
     unsigned int watson_count, crick_count;
     double watson_norm, crick_norm;
-    Counter() : watson_count(0), crick_count(0), watson_norm(0), crick_norm(0) {};
+    std::string label;
+    Counter() : watson_count(0), crick_count(0), watson_norm(0), crick_norm(0), label() {};
 };
 
 
@@ -52,4 +57,13 @@ template <typename TReturn>
 using TMedianAccumulator = boost::accumulators::accumulator_set<TReturn, boost::accumulators::stats<boost::accumulators::tag::median> >;
 
 
+double sum(std::vector<double> const & vec)
+{
+    double sum = 0;
+    for (double d : vec)
+        sum += d;
+    return(sum);
+}
 
+
+#endif /* utils_hpp */
