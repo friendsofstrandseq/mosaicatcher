@@ -24,10 +24,10 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
 #include <boost/filesystem.hpp>
-
 #include <htslib/sam.h>
 
 #include "utils.hpp"
+#include "hmm.hpp"
 
 /*
     Assumptions:
@@ -172,8 +172,12 @@ int main(int argc, char **argv)
         out.close();
         return(0);
     }
-    
-   
+
+
+
+    std::cout << "Caution: Classification of strandedness is still very preliminary" << std::endl;
+
+
     // Normalize by sample:
     for(unsigned i = 0; i < counts.size(); ++i) {
 
@@ -203,6 +207,7 @@ int main(int argc, char **argv)
 
     // Blacklisting bins:
     // - if median count in this bin is too low
+    // Todo: Use a better blacklisting!
 
     // Calculate median per bin
     std::vector<std::vector<double> > bin_medians(counts[0].size());
@@ -233,21 +238,102 @@ int main(int argc, char **argv)
         }
     }
 
+    // todo: string comparisons as labels --> replace by faster type (e.g. enum)
 
 
-    // mode "norm": print normalized counts
-    if (conf.mode == "norm") {
+
+    // Set up an HMM:
+    /*
+    hmm::MultiVariateGaussianHMM hmm(12, 2);
+    std::vector<double> transition_probs = {\
+        981,  5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
+        5,  981, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
+        5,  5, 981, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
+        5,  5, 5, 977, 1, 1, 1, 1, 1, 1, 1, 1, \
+        5,  5, 5, 1, 977, 1, 1, 1, 1, 1, 1, 1, \
+        5,  5, 5, 1, 1, 977, 1, 1, 1, 1, 1, 1, \
+        5,  5, 5, 1, 1, 1, 977, 1, 1, 1, 1, 1, \
+        5,  5, 5, 1, 1, 1, 1, 977, 1, 1, 1, 1, \
+        5,  5, 5, 1, 1, 1, 1, 1, 977, 1, 1, 1, \
+        5,  5, 5, 1, 1, 1, 1, 1, 1, 977, 1, 1, \
+        5,  5, 5, 1, 1, 1, 1, 1, 1, 1, 977, 1, \
+        5,  5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 977 };
+    for (unsigned i=0; i< transition_probs.size(); ++i)
+        transition_probs[i] /= 1000;
+    hmm.set_transitions(transition_probs);
+    hmm.setInitials({0.25,0.41,0.25, 0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01 });
+    hmm.set_emissions( {hmm::Gaussian("WW",   2, {0,2},   {0.1,0.4}),
+                        hmm::Gaussian("WC",   2, {1,1},   {0.4,0.4}),
+                        hmm::Gaussian("CC",   2, {2,0},   {0.4,0.1}),
+                        hmm::Gaussian("CCC",  2, {3,0},   {0.4,0.1}),
+                        hmm::Gaussian("WCC",  2, {2,1},   {0.4,0.1}),
+                        hmm::Gaussian("WWC",  2, {1,2},   {0.4,0.1}),
+                        hmm::Gaussian("WWW",  2, {0,3},   {0.4,0.1}),
+                        hmm::Gaussian("CCCC", 2, {4,0},   {0.4,0.1}),
+                        hmm::Gaussian("CCCW", 2, {3,1},   {0.4,0.1}),
+                        hmm::Gaussian("CCWW", 2, {2,2},   {0.4,0.1}),
+                        hmm::Gaussian("CWWW", 2, {1,3},   {0.4,0.1}),
+                        hmm::Gaussian("WWWW", 2, {0,4},   {0.4,0.1})    } );
+     */
+
+    // Set up an HMM:
+    hmm::MultiVariateGaussianHMM hmm(3, 2);
+    hmm.set_transitions({\
+        .998,  .001, .001, \
+        .001, .998, .001, \
+        .001, .001, .998 });
+    hmm.set_emissions( {\
+        hmm::Gaussian("WW",   2, {0,2},   {0.1,0.4}),
+        hmm::Gaussian("WC",   2, {1,1},   {0.4,0.4}),
+        hmm::Gaussian("CC",   2, {2,0},   {0.4,0.1}) });
+
+
+    for(unsigned i = 0; i < counts.size(); ++i) {
+        for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
+
+            // Order: crick, watson, crick, watson, ...
+            std::vector<double> seq;
+            for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
+                Counter & cc = counts[i][chrom][bin];
+                if (cc.label != "none") {
+                    seq.push_back(cc.crick_norm);
+                    seq.push_back(cc.watson_norm);
+                }
+            }
+
+            double logp = hmm.viterbi(seq);
+            std::vector<std::string> path = hmm.get_path_labels();
+            assert(path.size() == seq.size()/2);
+
+            // write classification into Counter
+            unsigned bin_in_path = 0;
+            for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
+                Counter & cc = counts[i][chrom][bin];
+                if (cc.label != "none")
+                    cc.label = path[bin_in_path++];
+            }
+        }
+    }
+
+
+    // print normalized counts
+    if (conf.mode == "classify")
+    {
+        std::cout << "Writing file " << conf.f_out.string() << std::endl;
         std::ofstream out(conf.f_out.string());
-        out << "chrom\tstart\tend\tsample\tw\tc" << std::endl;
+        out << "chrom\tstart\tend\tsample\tw\tc\twn\tcn\tclass" << std::endl;
         for(unsigned i = 0; i < counts.size(); ++i) {
             for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
                 for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
-                    Counter & cc = counts[0][chrom][bin];
+                    Counter & cc = counts[i][chrom][bin];
                     out << hdr->target_name[chrom];
                     out << "\t" << bin*conf.window << "\t" << (bin+1)*conf.window;
-                    out << "\t" << conf.f_in[i].string();
+                    out << "\t" << conf.f_in[i].filename().string();
+                    out << "\t" << cc.watson_count;
+                    out << "\t" << cc.crick_count;
                     out << "\t" << cc.watson_norm;
                     out << "\t" << cc.crick_norm;
+                    out << "\t" << cc.label;
                     out << std::endl;
                 }
             }
@@ -257,9 +343,7 @@ int main(int argc, char **argv)
     } 
 
 
-
-
-
+    // nothing here
 
     return 0;
 }
