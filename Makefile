@@ -33,7 +33,7 @@ endif
 
 
 # Sources
-MAINSOURCES = src/main.cpp $(wildcard src/*.h)
+MAINSOURCES = src/main.cpp $(wildcard src/*.hpp)
 HTSLIBSOURCES = $(wildcard src/htslib/*.c) $(wildcard src/htslib/*.h)
 BOOSTSOURCES = $(wildcard src/boost/libs/iostreams/include/boost/iostreams/*.hpp)
 
