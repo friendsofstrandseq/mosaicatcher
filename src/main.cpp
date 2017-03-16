@@ -27,6 +27,7 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include <htslib/sam.h>
 
 #include "utils.hpp"
+#include "distribution.hpp"
 #include "hmm.hpp"
 
 /*
@@ -40,9 +41,231 @@ Contact: Sascha Meiers (meiers@embl.de)
 
 static unsigned MIN_MEDIAN_PER_SAMPLE = 20;
 static double   MIN_MEDIAN_PER_BIN    = 0.1;
+typedef std::vector<std::vector<Counter> > TGenomeCounts;
+
+
+
+std::vector<unsigned> median_by_sample(std::vector<TGenomeCounts> & counts)
+{
+    std::vector<unsigned> median_by_sample(counts.size());
+
+    for(unsigned i = 0; i < counts.size(); ++i) {
+
+        // calculate median count per sample:
+        TMedianAccumulator<unsigned int> med_acc;
+        for (std::vector<Counter> const & count_chrom : counts[i])
+            for(Counter const & count_bin : count_chrom)
+                med_acc(count_bin.watson_count + count_bin.crick_count);
+
+        median_by_sample[i] = boost::accumulators::median(med_acc);
+    }
+
+    return median_by_sample;
+}
+
+
+
+std::vector<std::vector<double> > median_per_bin(std::vector<TGenomeCounts> & counts)
+{
+    typedef std::vector<double> TVec;
+    std::vector<TVec> median_per_bin(counts[0].size());
+    for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom)
+        median_per_bin[chrom] = TVec(counts[0][chrom].size(), 0);
+
+    for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom)
+    {
+        if (counts[0][chrom].size() < 1) continue;
+
+        for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin)
+            {
+            TMedianAccumulator<double> med_acc;
+            for(unsigned i = 0; i < counts.size(); ++i) {
+                Counter const & cc = counts[i][chrom][bin];
+                med_acc(cc.watson_norm + cc.crick_norm);
+            }
+            median_per_bin[chrom][bin] = boost::accumulators::median(med_acc);
+        }
+    }
+    return median_per_bin;
+}
+
+
+
+void run_gaussian_HMM(std::vector<TGenomeCounts> & counts)
+{
+    /*
+     hmm::MultiVariateGaussianHMM hmm(12, 2);
+     std::vector<double> transition_probs = {\
+     981,  5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
+     5,  981, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
+     5,  5, 981, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
+     5,  5, 5, 977, 1, 1, 1, 1, 1, 1, 1, 1, \
+     5,  5, 5, 1, 977, 1, 1, 1, 1, 1, 1, 1, \
+     5,  5, 5, 1, 1, 977, 1, 1, 1, 1, 1, 1, \
+     5,  5, 5, 1, 1, 1, 977, 1, 1, 1, 1, 1, \
+     5,  5, 5, 1, 1, 1, 1, 977, 1, 1, 1, 1, \
+     5,  5, 5, 1, 1, 1, 1, 1, 977, 1, 1, 1, \
+     5,  5, 5, 1, 1, 1, 1, 1, 1, 977, 1, 1, \
+     5,  5, 5, 1, 1, 1, 1, 1, 1, 1, 977, 1, \
+     5,  5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 977 };
+     for (unsigned i=0; i< transition_probs.size(); ++i)
+     transition_probs[i] /= 1000;
+     hmm.set_transitions(transition_probs);
+     hmm.setInitials({0.25,0.41,0.25, 0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01 });
+     hmm.set_emissions( {hmm::Gaussian("WW",   2, {0,2},   {0.1,0.4}),
+     hmm::Gaussian("WC",   2, {1,1},   {0.4,0.4}),
+     hmm::Gaussian("CC",   2, {2,0},   {0.4,0.1}),
+     hmm::Gaussian("CCC",  2, {3,0},   {0.4,0.1}),
+     hmm::Gaussian("WCC",  2, {2,1},   {0.4,0.1}),
+     hmm::Gaussian("WWC",  2, {1,2},   {0.4,0.1}),
+     hmm::Gaussian("WWW",  2, {0,3},   {0.4,0.1}),
+     hmm::Gaussian("CCCC", 2, {4,0},   {0.4,0.1}),
+     hmm::Gaussian("CCCW", 2, {3,1},   {0.4,0.1}),
+     hmm::Gaussian("CCWW", 2, {2,2},   {0.4,0.1}),
+     hmm::Gaussian("CWWW", 2, {1,3},   {0.4,0.1}),
+     hmm::Gaussian("WWWW", 2, {0,4},   {0.4,0.1})    } );
+     */
+
+
+
+    // Set up an HMM:
+    hmm::HMM<double, hmm::MultiVariate<hmm::Gaussian> > hmm({"WW", "WC", "CC"});
+    hmm.set_transitions({\
+        .998,  .001, .001, \
+        .001, .998, .001, \
+        .001, .001, .998 });
+    hmm.set_emissions( {\
+        hmm::MultiVariate<hmm::Gaussian>({hmm::Gaussian(0,0.5), hmm::Gaussian(2,0.5)}),
+        hmm::MultiVariate<hmm::Gaussian>({hmm::Gaussian(1,0.5), hmm::Gaussian(1,0.5)}),
+        hmm::MultiVariate<hmm::Gaussian>({hmm::Gaussian(2,0.7), hmm::Gaussian(0,0.5)})
+    });
+
+
+    for(unsigned i = 0; i < counts.size(); ++i) {
+        for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
+
+            // Order: crick, watson, crick, watson, ...
+            std::vector<double> seq;
+            for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
+                Counter const & cc = counts[i][chrom][bin];
+                if (cc.get_label() != "none") {
+                    seq.push_back(cc.crick_norm);
+                    seq.push_back(cc.watson_norm);
+                }
+            }
+
+            hmm.viterbi(seq);
+            std::vector<std::string> path = hmm.get_path_labels();
+            assert(path.size() == seq.size()/2);
+
+            // write classification into Counter
+            unsigned bin_in_path = 0;
+            for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
+                Counter & cc = counts[i][chrom][bin];
+                if (cc.get_label() != "none")
+                    cc.set_label(path[bin_in_path++]);
+            }
+        }
+    }
+    
+
+}
+
+
+void run_bn_HMM(std::vector<TGenomeCounts> & counts, std::vector<unsigned> const & sample_median)
+{
+    assert(counts.size() == sample_median.size());
+
+    // Set up an HMM:
+    hmm::HMM<unsigned, hmm::MultiVariate<hmm::NegativeBinomial> > hmm({"WW", "WC", "CC"});
+    hmm.set_transitions({\
+        .998,  .001, .001, \
+        .001, .998, .001, \
+        .001, .001, .998 });
+
+    for (unsigned i=0; i<counts.size(); ++i) {
+
+        // set n and p parameters according to a mean of "sample_median"
+        // n = 1
+        double p = 0.01;
+        double med = (double)sample_median[i]/2;
+        double n = (double)med * p / (1-p);
+        hmm.set_emissions( {\
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,  1)}),
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,  n)}),
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  1), hmm::NegativeBinomial(p,2*n)})
+        });
+
+
+        { // print
+                            std::cout << std::endl;
+                            std::cout << "----------------------------" << std::endl;
+                            std::cout << "Sample " << i << "\t" << "mean = " << med << "\t" << "n = " << n << "\t" << "p = " << p << std::endl;
+
+                            for (auto dist : hmm.distributions) {
+                                std::cout << dist;
+                            }
+        } // end print
+
+
+
+        for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom)
+        {
+            // Order: crick, watson, crick, watson, ...
+            std::vector<unsigned> seq;
+            for (unsigned bin = 0; bin < counts[i][chrom].size(); ++bin) {
+                Counter const & cc = counts[i][chrom][bin];
+                if (cc.get_label() != "none") {
+                    seq.push_back(cc.crick_count);
+                    seq.push_back(cc.watson_count);
+                }
+            }
+
+            std::cout << "Log likelihood in sample " << i << " = " << hmm.viterbi(seq) << std::endl;
+            std::vector<std::string> path = hmm.get_path_labels();
+            assert(path.size() == seq.size()/2);
+
+            // write classification into Counter
+            unsigned bin_in_path = 0;
+            for (unsigned bin = 0; bin < counts[i][chrom].size(); ++bin) {
+                Counter & cc = counts[i][chrom][bin];
+                if (cc.get_label() != "none")
+                    cc.set_label(path[bin_in_path++]);
+            }
+        }
+    }
+}
+
+
 
 int main(int argc, char **argv)
 {
+
+    // Plot some test values for NB
+    bool plot_NB = false;
+    if (plot_NB)
+    {
+        std::ofstream outfile("/Users/meiers/work/projects/strseq/data/test");
+        unsigned max = 100;
+        std::vector<unsigned> ks(max);
+        for (unsigned k=0; k<max; ++k)
+            ks[k] = k;
+        std::vector<unsigned>::const_iterator k_iter = ks.begin();
+
+        std::vector<double> ps = {0.1,    0.2,   0.25,   0.5};
+        std::vector<double> ns = {2.2222, 5,     6.6666, 20 };
+
+        outfile << "n\tp\tk\tp(k)" << std::endl;
+        for (unsigned i=0;  i< ps.size(); ++i) {
+            hmm::NegativeBinomial nb(ps[i],  ns[i]);
+            std::cout << nb << std::endl;
+            for(unsigned k=0; k<max; ++k)
+                outfile << ns[i] << "\t" << ps[i] << "\t" << k << "\t" << nb.calc_emission(k_iter + k) << std::endl;
+        }
+        outfile.close();
+    }
+
+
 
     // Command line options
     Conf conf;
@@ -84,7 +307,6 @@ int main(int argc, char **argv)
 
 
     // Count in bins
-    typedef std::vector<std::vector<Counter> > TGenomeCounts;
     std::vector<TGenomeCounts> counts;
     counts.resize(conf.f_in.size());
     // Keep one header
@@ -175,65 +397,37 @@ int main(int argc, char **argv)
 
 
 
+
+
     std::cout << "Caution: Classification of strandedness is still very preliminary" << std::endl;
 
 
-    // Normalize by sample:
+
+    // 1. Normalize counts by sample:
+    //    To do: How to handle samples that are kicked out?
+    std::vector<unsigned> sample_median = median_by_sample(counts);
     for(unsigned i = 0; i < counts.size(); ++i) {
 
-        // calculate median count per sample:
-        TMedianAccumulator<unsigned int> med_acc;
-        for (std::vector<Counter> const & count_chrom : counts[i])
-            for(Counter const & count_bin : count_chrom)
-                med_acc(count_bin.watson_count + count_bin.crick_count);
-        unsigned sample_median = boost::accumulators::median(med_acc);
-        
-        if (sample_median < MIN_MEDIAN_PER_SAMPLE) {
-            std::cout << "    Ignoring " << conf.f_in[i].string() << " due to too few reads. Consider increasing window size." << std::endl;
+        if (sample_median[i] < MIN_MEDIAN_PER_SAMPLE) {
+            std::cout << "    Todo(!): Ignoring sample " << i << std::endl;
             continue;
         }
-        
         for (std::vector<Counter> & count_chrom : counts[i]) {
             for(Counter & cc : count_chrom) {
-                cc.watson_norm = cc.watson_count / (double)sample_median * 2;
-                cc.crick_norm  = cc.crick_count  / (double)sample_median * 2;
+                cc.watson_norm = cc.watson_count / (double)sample_median[i] * 2;
+                cc.crick_norm  = cc.crick_count  / (double)sample_median[i] * 2;
             }
         }
     }
 
-    // To do: How to handle samples that are kicked out?
-
-
-
-    // Blacklisting bins:
-    // - if median count in this bin is too low
-    // Todo: Use a better blacklisting!
-
-    // Calculate median per bin
-    std::vector<std::vector<double> > bin_medians(counts[0].size());
-    for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom)
-        bin_medians[chrom] = std::vector<double>(counts[0][chrom].size(), 1);
-    
-    for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
-        if (counts[0][chrom].size() < 1) continue;
-        for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
-            
-            TMedianAccumulator<double> med_acc;
-            for(unsigned i = 0; i < counts.size(); ++i) {
-                Counter & cc = counts[i][chrom][bin];
-                med_acc(cc.watson_norm + cc.crick_norm);
-            }
-            bin_medians[chrom][bin] = boost::accumulators::median(med_acc);
-        }
-    }
-
-    // Blacklist bins
+    // 2. Calculate median per bin (blacklisting)
+    std::vector<std::vector<double> > bin_median = median_per_bin(counts);
     for(unsigned i = 0; i < counts.size(); ++i) {
         for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
             for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
                 Counter & cc = counts[i][chrom][bin];
-                if (bin_medians[chrom][bin] < MIN_MEDIAN_PER_BIN)
-                    cc.label = "none";
+                if (bin_median[chrom][bin] < MIN_MEDIAN_PER_BIN)
+                    cc.set_label("none");
             }
         }
     }
@@ -242,78 +436,13 @@ int main(int argc, char **argv)
 
 
 
-    // Set up an HMM:
-    /*
-    hmm::MultiVariateGaussianHMM hmm(12, 2);
-    std::vector<double> transition_probs = {\
-        981,  5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
-        5,  981, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
-        5,  5, 981, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
-        5,  5, 5, 977, 1, 1, 1, 1, 1, 1, 1, 1, \
-        5,  5, 5, 1, 977, 1, 1, 1, 1, 1, 1, 1, \
-        5,  5, 5, 1, 1, 977, 1, 1, 1, 1, 1, 1, \
-        5,  5, 5, 1, 1, 1, 977, 1, 1, 1, 1, 1, \
-        5,  5, 5, 1, 1, 1, 1, 977, 1, 1, 1, 1, \
-        5,  5, 5, 1, 1, 1, 1, 1, 977, 1, 1, 1, \
-        5,  5, 5, 1, 1, 1, 1, 1, 1, 977, 1, 1, \
-        5,  5, 5, 1, 1, 1, 1, 1, 1, 1, 977, 1, \
-        5,  5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 977 };
-    for (unsigned i=0; i< transition_probs.size(); ++i)
-        transition_probs[i] /= 1000;
-    hmm.set_transitions(transition_probs);
-    hmm.setInitials({0.25,0.41,0.25, 0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01 });
-    hmm.set_emissions( {hmm::Gaussian("WW",   2, {0,2},   {0.1,0.4}),
-                        hmm::Gaussian("WC",   2, {1,1},   {0.4,0.4}),
-                        hmm::Gaussian("CC",   2, {2,0},   {0.4,0.1}),
-                        hmm::Gaussian("CCC",  2, {3,0},   {0.4,0.1}),
-                        hmm::Gaussian("WCC",  2, {2,1},   {0.4,0.1}),
-                        hmm::Gaussian("WWC",  2, {1,2},   {0.4,0.1}),
-                        hmm::Gaussian("WWW",  2, {0,3},   {0.4,0.1}),
-                        hmm::Gaussian("CCCC", 2, {4,0},   {0.4,0.1}),
-                        hmm::Gaussian("CCCW", 2, {3,1},   {0.4,0.1}),
-                        hmm::Gaussian("CCWW", 2, {2,2},   {0.4,0.1}),
-                        hmm::Gaussian("CWWW", 2, {1,3},   {0.4,0.1}),
-                        hmm::Gaussian("WWWW", 2, {0,4},   {0.4,0.1})    } );
-     */
+    // 3. Run HMM
+    bool gauss=false;
+    if (gauss)
+        run_gaussian_HMM(counts);
+    else
+        run_bn_HMM(counts, sample_median);
 
-    // Set up an HMM:
-    hmm::MultiVariateGaussianHMM hmm(3, 2);
-    hmm.set_transitions({\
-        .998,  .001, .001, \
-        .001, .998, .001, \
-        .001, .001, .998 });
-    hmm.set_emissions( {\
-        hmm::Gaussian("WW",   2, {0,2},   {0.1,0.4}),
-        hmm::Gaussian("WC",   2, {1,1},   {0.4,0.4}),
-        hmm::Gaussian("CC",   2, {2,0},   {0.4,0.1}) });
-
-
-    for(unsigned i = 0; i < counts.size(); ++i) {
-        for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
-
-            // Order: crick, watson, crick, watson, ...
-            std::vector<double> seq;
-            for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
-                Counter & cc = counts[i][chrom][bin];
-                if (cc.label != "none") {
-                    seq.push_back(cc.crick_norm);
-                    seq.push_back(cc.watson_norm);
-                }
-            }
-
-            double logp = hmm.viterbi(seq);
-            std::vector<std::string> path = hmm.get_path_labels();
-            assert(path.size() == seq.size()/2);
-
-            // write classification into Counter
-            unsigned bin_in_path = 0;
-            for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
-                Counter & cc = counts[i][chrom][bin];
-                if (cc.label != "none")
-                    cc.label = path[bin_in_path++];
-            }
-        }
-    }
 
 
     // print normalized counts
@@ -333,7 +462,7 @@ int main(int argc, char **argv)
                     out << "\t" << cc.crick_count;
                     out << "\t" << cc.watson_norm;
                     out << "\t" << cc.crick_norm;
-                    out << "\t" << cc.label;
+                    out << "\t" << cc.get_label();
                     out << std::endl;
                 }
             }

@@ -46,11 +46,38 @@ inline uint32_t alignmentLength(bam1_t const* rec) {
 
 
 struct Counter {
+    static const std::vector<std::string> label_names;
+    static const std::map<std::string, uint8_t> label_id;
     unsigned int watson_count, crick_count;
     double watson_norm, crick_norm;
-    std::string label;
-    Counter() : watson_count(0), crick_count(0), watson_norm(0), crick_norm(0), label() {};
+    uint8_t label;
+
+    Counter() : watson_count(0), crick_count(0), watson_norm(0), crick_norm(0), label(0)
+    {}
+
+    bool set_label(std::string const & s) {
+        auto iter = label_id.find(s);
+        assert(iter != label_id.end());
+        if (iter == label_id.end()) return false;
+        label = iter->second;
+        return true;
+    }
+    
+    std::string get_label() const {
+        assert(label < label_names.size());
+        return label_names[label];
+    }
 };
+const std::vector<std::string> Counter::label_names = {"unset", "none", "WW", "WC", "CC"};
+const std::map<std::string, uint8_t> Counter::label_id = {
+    {"unset",0},
+    {"none", 1},
+    {"WW",   2},
+    {"WC",   3},
+    {"CC",   4},
+};
+
+
 
 
 template <typename TReturn>
