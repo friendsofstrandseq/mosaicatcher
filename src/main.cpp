@@ -74,7 +74,7 @@ int main(int argc, char **argv)
         std::cout << "Usage: " << argv[0] << " [OPTIONS] <strand.seq1.bam> <strand.seq2.bam> ... <strand.seqN.bam>" << std::endl;
         std::cout << visible_options << std::endl;
         std::cout << std::endl;
-        std::cout << "Notes:" std::endl;
+        std::cout << "Notes:" << std::endl;
         std::cout << "  * One cell per BAM file. Sample names and read groups are ignored." << std::endl;
         std::cout << "  * For paired-end data, only read 1 is counted" << std::endl;
         return 1;
