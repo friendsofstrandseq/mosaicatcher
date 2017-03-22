@@ -283,7 +283,7 @@ namespace hmm {
         return max_log;
     }
 
-    template HMM<double, MultiVariate<Gaussian> >;
+    //template HMM<double, MultiVariate<Gaussian> >;
 
 }
 #endif /* hmm_hpp */
