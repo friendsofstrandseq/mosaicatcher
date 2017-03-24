@@ -33,17 +33,19 @@ endif
 
 
 # Sources
-MAINSOURCES = src/main.cpp $(wildcard src/*.h)
 HTSLIBSOURCES = $(wildcard src/htslib/*.c) $(wildcard src/htslib/*.h)
 BOOSTSOURCES = $(wildcard src/boost/libs/iostreams/include/boost/iostreams/*.hpp)
 
 
 # Targets
-TARGETS = .htslib .boost src/main
+TARGETS = .htslib .boost src/main src/calc_bins
 
 all: $(TARGETS)
 
-src/main: $(MAINSOURCES)
+src/main: .boost .htslib src/main.cpp $(wildcard src/*.hpp)
+	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
+
+src/calc_bins: .boost .htslib src/calc_bins.cpp src/calc_bins.hpp
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 .htslib: $(HTSLIBSOURCES)
@@ -51,7 +53,6 @@ src/main: $(MAINSOURCES)
 
 .boost: $(BOOSTSOURCES)
 	cd src/boost && ./bootstrap.sh --prefix=${PWD}/src/boost --without-icu --with-libraries=iostreams,filesystem,system,program_options,date_time && ./b2 && ./b2 headers && cd ../../ && touch .boost
-
 
 clean:
 	cd src/htslib && make clean
