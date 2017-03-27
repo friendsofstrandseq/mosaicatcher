@@ -18,7 +18,6 @@
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
 #include <htslib/sam.h>
-#include "calc_bins.hpp"
 
 
 struct Conf {
@@ -38,7 +37,7 @@ int main(int argc, char **argv)
     ("help,?", "show help message")
     ("mapq,q", boost::program_options::value<unsigned>(&conf.minMapQual)->default_value(10), "min mapping quality")
     ("window,w", boost::program_options::value<unsigned>(&conf.window)->default_value(100000), "window size to approximate")
-    ("numreads,n", boost::program_options::value<unsigned>(&conf.num_reads)->default_value(20), "sample every n-th read (to reduce memory consumption)")
+    ("numreads,n", boost::program_options::value<unsigned>(&conf.num_reads)->default_value(20), "sample 1/n of reads (reduce memory)")
     ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("bins.bed"), "output file for bins")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&conf.f_excl), "Exclude chromosomes listed in this file (one per line)")
     ;
@@ -160,7 +159,7 @@ int main(int argc, char **argv)
     // Split positions every ~avg_num_reads and output
     for (unsigned i=0; i<positions.size(); ++i) {
         unsigned prev_pos = 0;
-        for (unsigned list_pos = 0; list_pos < positions[i].size(); list_pos+=jump)
+        for (unsigned list_pos = jump; list_pos < positions[i].size(); list_pos+=jump)
         {
             out << hdr->target_name[ tids[i] ] << "\t" << prev_pos << "\t" << positions[i][list_pos] << std::endl;
             prev_pos = positions[i][list_pos];
