@@ -45,7 +45,7 @@ all: $(TARGETS)
 src/main: .boost .htslib src/main.cpp $(wildcard src/*.hpp)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/calc_bins: .boost .htslib src/calc_bins.cpp src/calc_bins.hpp
+src/calc_bins: .boost .htslib src/calc_bins.cpp
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 .htslib: $(HTSLIBSOURCES)
