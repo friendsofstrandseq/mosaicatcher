@@ -23,9 +23,11 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
+#include <boost/tokenizer.hpp>
 #include <boost/filesystem.hpp>
 
 #include <htslib/sam.h>
+#include "intervals.hpp"
 #include "utils.hpp"
 
 /*
@@ -38,6 +40,17 @@ Contact: Sascha Meiers (meiers@embl.de)
 */
 
 typedef std::vector<std::vector<Counter> > TGenomeCounts;
+
+
+struct Conf {
+    std::vector<boost::filesystem::path> f_in;
+    boost::filesystem::path f_out;
+    boost::filesystem::path f_bins;
+    int minMapQual;
+    unsigned int window;
+    std::string mode;
+};
+
 
 int main(int argc, char **argv)
 {

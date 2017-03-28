@@ -22,13 +22,6 @@ Contact: Sascha Meiers (meiers@embl.de)
 
 
 
-struct Conf {
-    std::vector<boost::filesystem::path> f_in;
-    boost::filesystem::path f_out;
-    int minMapQual;
-    unsigned int window;
-    std::string mode;
-};
 
 
 inline uint32_t alignmentLength(bam1_t const* rec) {
