@@ -60,8 +60,9 @@ int main(int argc, char **argv)
     generic.add_options()
     ("help,?", "show help message")
     ("mapq,q", boost::program_options::value<int>(&conf.minMapQual)->default_value(10), "min mapping quality")
-    ("window,w", boost::program_options::value<unsigned int>(&conf.window)->default_value(1000000), "window size")
+    ("window,w", boost::program_options::value<unsigned int>(&conf.window)->default_value(1000000), "window size of fixed windows")
     ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt"), "output file for counts")
+    ("bins,b", boost::program_options::value<boost::filesystem::path>(&conf.f_bins), "variable bin file (BED format, mutually exclusive to -w)")
     ;
 
     boost::program_options::options_description hidden("Hidden options");
@@ -83,7 +84,10 @@ int main(int argc, char **argv)
 
 
     // Check command line arguments
-    if ((vm.count("help")) || (!vm.count("input-file"))) {
+    if (   vm.count("help") \
+        || !vm.count("input-file") \
+        /*|| (vm.count("window") && vm.count("bins"))*/  )
+    {
         std::cout << "Usage: " << argv[0] << " [OPTIONS] <strand.seq1.bam> <strand.seq2.bam> ... <strand.seqN.bam>" << std::endl;
         std::cout << visible_options << std::endl;
         std::cout << std::endl;
@@ -93,13 +97,45 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    // Keep one header file all the time
+    samFile* samfile = sam_open(conf.f_in[0].string().c_str(), "r");
+    if (samfile == NULL) {
+        std::cerr << "Fail to open file " << conf.f_in[0].string() << std::endl;
+        return 1;
+    }
+    bam_hdr_t* hdr = sam_hdr_read(samfile);
+
+
+
+
+    // Binning the genome
+    std::vector<Interval> bins; // stores all intervals
+    std::vector<int32_t> chrom_map(hdr->n_targets, -1);
+    if (vm.count("bins")) {
+        if (!read_dynamic_bins(bins, chrom_map, conf.f_bins.string().c_str(), hdr))
+            return 1;
+    } else {
+        std::vector<int32_t> tids = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22};
+        // todo: exclude file
+        create_fixed_bins(bins, chrom_map, conf.window, tids, hdr);
+    }
+
+
+    std::cout << "tid" << "\t" << "chr" << "\t" << "map" << "\t" << "size" << std::endl;
+    for (int32_t i=0; i<hdr->n_targets; ++i)
+        std::cout << i << "\t" << hdr->target_name[i] << "\t" << chrom_map[i] << "\t" << (i>0 ? chrom_map[i]-chrom_map[i-1] : -2) << std::endl;
+
+
+    // @ work here
+    return 0;
+
+
+
 
 
     // Count in bins
     std::vector<TGenomeCounts> counts;
     counts.resize(conf.f_in.size());
-    // Keep one header
-    bam_hdr_t* hdr;
 
     for(unsigned i = 0; i < counts.size(); ++i) {
 
