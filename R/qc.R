@@ -30,14 +30,17 @@ for (s in unique(d$sample))
 {
     message("Plotting ", s)
     e = d[sample == s,]
-    binwidth = e$end[1] - e$start[1]
+    e$rand_bg = rep(c("a","b"), nrow(e))[1:nrow(e)]
+    binwidth = median(e$end - e$start)
     reads_per_bin = perSample[sample == s,]$median
-    
+    num_bins = nrow(e)
+
     # main plot:
     plt <- ggplot(e) +
         aes(x = (start+end)/2) +
-        geom_bar(aes(y = -w), stat='identity', position = 'identity', fill='darkorange', width=binwidth) +
-        geom_bar(aes(y = c), stat='identity', position = 'identity', fill='dodgerblue3', width=binwidth) +
+        geom_rect(aes(xmin = start, xmax=end, ymin=-2*reads_per_bin, ymax=2*reads_per_bin, fill=rand_bg), inherit.aes=F, alpha=0.25) +
+        geom_bar(aes(y = -w, width=(end-start)), stat='identity', position = 'identity', fill='darkorange') +
+        geom_bar(aes(y = c, width=(end-start)), stat='identity', position = 'identity', fill='dodgerblue3') +
         coord_flip(expand = F, ylim=c(-2*reads_per_bin,2*reads_per_bin)) +
         facet_grid(.~chrom, switch="x") +
         ylab("Watson | Crick") +
@@ -61,16 +64,31 @@ for (s in unique(d$sample))
     plt_hist <- ggplot(e.melt) + 
         aes(coverage, fill = strand, col = strand, y = ..scaled..) +
         geom_density(adjust=0.5, alpha=0.3) +
-        scale_x_continuous(limits = c(0,3*reads_per_bin), breaks = pretty_breaks(4), labels = comma)
+        scale_x_continuous(limits = c(0,3*reads_per_bin), breaks = pretty_breaks(4), labels = comma) +
+        theme(axis.title.y = element_blank())
+
+    # Binwidth histogram
+    plt_binsize <- ggplot(e) + aes(end-start) + geom_histogram(binwidth=10e3) +
+        coord_cartesian(xlim=c(0,2.5*binwidth)) + xlab("binsize") +
+        scale_x_continuous(label=comma, breaks = pretty_breaks(4)) +
+        theme(axis.title.y = element_blank())
+
+    # total count histogram
+    plt_covhist <- ggplot(e) + aes(w+c) + geom_histogram() +
+        xlab("coverage") + theme(axis.title.y = element_blank()) +
+        scale_x_continuous(limits = c(0, 5*reads_per_bin), label=comma, breaks = pretty_breaks(3))
     
     s_name = substr(s,1,25)
     if (nchar(s)>25) s_name = paste0(s_name, "...")
     
     all <- ggdraw() + draw_plot(plt) + 
-        draw_plot(plt_hist, .69, .77, .3,.22) +
+        draw_plot(plt_hist,    .74, .75, .25,.2) +
+        draw_plot(plt_binsize, .56, .75, .18, .2) +
+        draw_plot(plt_covhist, .38, .75, .18, .2) +
         draw_label(paste("Sample:", s_name), x=.2, y=.97, vjust=1, hjust=0, size = 14) +
-        draw_label(paste("Binwidth:", format(binwidth, big.mark=",")), x=.2, y=.94, vjust=1, hjust=0, size=10) +
-        draw_label(paste("Reads/Bin:", reads_per_bin), x=.2, y=.92, vjust=1, hjust=0, size=10)
+        draw_label(paste("Avg. binwidth:", format(binwidth, big.mark=",")), x=.2, y=.94, vjust=1, hjust=0, size=10) +
+        draw_label(paste("Number bins:", format(num_bins, big.mark=",")), x=.2, y=.92, vjust=1, hjust=0, size=10) +
+        draw_label(paste("Reads/bin:", reads_per_bin), x=.2, y=.90, vjust=1, hjust=0, size=10)
     print(all)
 }
 dev.off()
