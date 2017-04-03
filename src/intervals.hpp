@@ -82,6 +82,9 @@ bool create_fixed_bins(std::vector<Interval> & intervals,
 
     for (int32_t chrom=0; chrom<hdr->n_targets; ++chrom)
     {
+        // store chrom-pointer in chrom_map
+        chrom_map[chrom] = (int32_t)intervals.size();
+
         // skip excl. chromosomes "left" of this one
         while(excl_iter != excl.end() && excl_iter->chr < chrom)
             ++excl_iter;
@@ -117,9 +120,6 @@ bool create_fixed_bins(std::vector<Interval> & intervals,
                 pos += binwidth;
             }
         }
-
-        // store chrom-pointer in chrom_map
-        chrom_map[chrom] = (int32_t)intervals.size();
     }
     return true;
 }

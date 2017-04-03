@@ -83,7 +83,7 @@ bool count_sorted_reads(std::string const & filename,
     counts.resize(bins.size(), Counter());
 
     // access samfile chrom per chrom
-    for (int chrom = 0; chrom < hdr->n_targets; ++chrom) {
+    for (int32_t chrom = 0; chrom < hdr->n_targets; ++chrom) {
 
         // skip chromosomes with no bins
         if (chrom_map[chrom+1] - chrom_map[chrom] < 1)
