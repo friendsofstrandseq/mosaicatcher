@@ -1,6 +1,7 @@
 #ifndef calc_bins_hpp
 #define calc_bins_hpp
 
+#include <algorithm>
 #include <boost/tokenizer.hpp>
 #include <htslib/sam.h>
 
@@ -13,7 +14,16 @@ struct Interval {
     Interval(int32_t tid, int32_t s, int32_t e): chr(tid), start(s), end(e) {}
 };
 
-auto interval_comp = [] (Interval const & a, Interval const & b) { return (a.chr==b.chr) ? a.start < b.start : a.chr < b.chr; };
+auto interval_comp = [] (Interval const & a, Interval const & b) {
+    if (a.chr == b.chr)
+        // special condition: If intervals start at the same position, prefer larger one!
+        if (a.start == b.start)
+            return (a.end - a.start) < (b.end - b.start);
+        else
+            return a.start < b.start;
+    else
+        return a.chr < b.chr;
+};
 
 
 /**
@@ -29,36 +39,10 @@ bool read_dynamic_bins(std::vector<Interval> & intervals,
                        TFilename const & filename,
                        bam_hdr_t* hdr)
 {
-    std::ifstream interval_file(filename, std::ifstream::in);
-    if (interval_file.is_open()) {
-        while (interval_file.good()) {
-            std::string intervalLine;
-            getline(interval_file, intervalLine);
-            typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
-            boost::char_separator<char> sep(" \t,;");
-            Tokenizer tokens(intervalLine, sep);
-            Tokenizer::iterator tokIter = tokens.begin();
-            if (tokIter!=tokens.end()) {
-                std::string chrName=*tokIter++;
-                int32_t tid = bam_name2id(hdr, chrName.c_str());
-                if (tid >= 0) {
-                    if (tokIter!=tokens.end()) {
-                        Interval bed;
-                        bed.chr = tid;
-                        bed.start = boost::lexical_cast<int32_t>(*tokIter++);
-                        bed.end = boost::lexical_cast<int32_t>(*tokIter++);
-                        intervals.push_back(bed);
-                    }
-                } else {
-                    std::cerr << "chromosome not found: " << chrName << " (ignored)" << std::endl;
-                }
-            }
-        }
-        interval_file.close();
-    } else {
-        std::cerr << "Cannot open file " << filename << std::endl;
+    // read intervals
+    if (!read_exclude_file(filename, hdr, intervals))
         return false;
-    }
+
     if (intervals.size()<1) {
         std::cerr << "No intervals" << std::endl;
         return false;
@@ -91,33 +75,103 @@ bool read_dynamic_bins(std::vector<Interval> & intervals,
 bool create_fixed_bins(std::vector<Interval> & intervals,
                        std::vector<int32_t> & chrom_map,
                        unsigned binwidth,
-                       std::vector<int32_t> const & tids, // sorted
+                       std::vector<Interval> const & excl,
                        bam_hdr_t* hdr)
 {
-    if (tids.size()<1) {
-        std::cerr << "No chromosomes left" << std::endl;
-        return false;
-    }
-    int32_t j=0;
-    for (int32_t chrom : tids) {
-        assert(chrom >= 0 && chrom < hdr->n_targets);
+    auto excl_iter = excl.begin();
+
+    for (int32_t chrom=0; chrom<hdr->n_targets; ++chrom)
+    {
+        // skip excl. chromosomes "left" of this one
+        while(excl_iter != excl.end() && excl_iter->chr < chrom)
+            ++excl_iter;
+
+        unsigned pos = 0;
+        while (pos < hdr->target_len[chrom]) {
+
+            // skip excl. bins left of pos
+            while(excl_iter != excl.end() && excl_iter->chr == chrom && excl_iter->end <= pos)
+                ++excl_iter;
+
+            Interval ivl;
+            ivl.chr = chrom;
+
+            // if pos is inside an excl. interval, go to its end
+            if (excl_iter != excl.end() && excl_iter->chr == chrom && pos >= excl_iter->start) {
+                pos = excl_iter->end;
+
+            } // if pos is ok but next interval is closer than binwidth
+            else if (excl_iter != excl.end() && excl_iter->chr == chrom && pos+binwidth >= excl_iter->start) {
+                ivl.start = pos;
+                ivl.end   = std::min((int32_t)(excl_iter->start), (int32_t)(hdr->target_len[chrom]));
+                intervals.push_back(ivl);
+                pos = excl_iter->end;
+
+            } // normal interval
+            else {
+                Interval ivl;
+                ivl.chr = chrom;
+                ivl.start = pos;
+                ivl.end   = std::min(pos+binwidth, (unsigned)hdr->target_len[chrom]);
+                intervals.push_back(ivl);
+                pos += binwidth;
+            }
+        }
 
         // store chrom-pointer in chrom_map
-        while (j<=chrom)
-            chrom_map[j++] = (int32_t)intervals.size();
-        
-        // fill intervals with bins for this chromosome
-        int32_t prev_pos = 0;
-        for (int32_t pos = binwidth; pos < hdr->target_len[chrom]; pos += binwidth) {
-            intervals.push_back(Interval(chrom, prev_pos, pos));
-            prev_pos = pos;
-        }
-        if (prev_pos + binwidth < hdr->target_len[chrom])
-            intervals.push_back(Interval(chrom, prev_pos+binwidth, hdr->target_len[chrom]));
+        chrom_map[chrom] = (int32_t)intervals.size();
     }
-    while (j < hdr->n_targets)
-        chrom_map[j++] = (int32_t)intervals.size();
     return true;
 }
+
+
+
+bool read_exclude_file(std::string const & filename, bam_hdr_t* hdr, std::vector<Interval> & intervals)
+{
+    std::ifstream interval_file(filename.c_str(), std::ifstream::in);
+    if (interval_file.is_open()) {
+        while (interval_file.good()) {
+            std::string line;
+            getline(interval_file, line);
+            typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+            boost::char_separator<char> sep(" \t,;");
+            Tokenizer tokens(line, sep);
+            Tokenizer::iterator tokIter = tokens.begin();
+            if (tokIter!=tokens.end()) {
+                std::string chrName = *tokIter++;
+                int32_t tid = bam_name2id(hdr, chrName.c_str());
+                if (tid >= 0 && tid < hdr->n_targets) {
+                    Interval ivl;
+                    ivl.chr = tid;
+                    if (tokIter == tokens.end()) {// exclude whole chrom
+                        ivl.start = 0;
+                        ivl.end   = hdr->target_len[tid];
+                    } else {
+                        ivl.start = boost::lexical_cast<int32_t>(*tokIter++);
+                        if (tokIter == tokens.end()) {
+                            std::cerr << "Warning: Invalid line: " << line << std::endl;
+                            continue;
+                        }
+                        ivl.end   = boost::lexical_cast<int32_t>(*tokIter++);
+                        if (ivl.end <= ivl.start) {
+                            std::cerr << "Warning: Invalid line: " << line << std::endl;
+                            continue;
+                        }
+                    }
+                    intervals.push_back(ivl);
+                } else {
+                    std::cerr << "Warning: Chromosome not found: " << chrName << std::endl;
+                }
+            }
+        }
+        interval_file.close();
+    } else {
+        std::cerr << "Error: Exclude file cannot be read: " << filename << std::endl;
+        return false;
+    }
+    return true;
+}
+
+
 
 #endif /* calc_bins_hpp */
