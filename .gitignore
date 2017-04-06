@@ -1,3 +1,5 @@
 .*
 !/.gitignore
+!/.travis.yml
 src/main
+src/calc_bins

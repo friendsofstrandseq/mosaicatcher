@@ -194,7 +194,8 @@ int main(int argc, char **argv)
         std::cout << visible_options << std::endl;
         std::cout << std::endl;
         std::cout << "Notes:" << std::endl;
-        std::cout << "  * One cell per BAM file, inclusing SM tag in header." << std::endl;
+        std::cout << "  * Reads are counted by start position" << std::endl;
+        std::cout << "  * One cell per BAM file, inclusing SM tag in header" << std::endl;
         std::cout << "  * For paired-end data, only read 1 is counted" << std::endl;
         return 1;
     }
