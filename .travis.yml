@@ -1,5 +1,7 @@
 # Mosaicatcher build script
 # taken from https://genbattle.bitbucket.io/blog/2016/01/17/c++-travis-ci/
+sudo: required
+dist: precise
 
 language: cpp
 
@@ -24,7 +26,7 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-4.9
-      env: CXX=g++-4.9
+      env: MY_CXX=g++-4.9
     - compiler: gcc
       addons:
         apt:
@@ -32,7 +34,7 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-5
-      env: CXX=g++-5
+      env: MY_CXX=g++-5
     - compiler: clang
       addons:
         apt:
@@ -41,7 +43,7 @@ matrix:
             - llvm-toolchain-precise-3.6
           packages:
             - clang-3.6
-      env: CXX=clang++-3.6
+      env: MY_CXX=clang++-3.6
     - compiler: clang
       addons:
         apt:
@@ -50,12 +52,11 @@ matrix:
             - llvm-toolchain-precise-3.7
           packages:
             - clang-3.7
-      env: CXX=clang++-3.7
+      env: MYCXX=clang++-3.7
 
 
-before_script:
-  - echo $($CXX --version)
+before_install:
+  - sudo apt-get update -qq
 
 script:
-- $CXX --version
-- make
+- export CXX=$MY_CXX && $CXX --version && make
