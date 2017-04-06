@@ -103,6 +103,9 @@ bool count_sorted_reads(std::string const & filename,
             if (rec->core.flag & BAM_FREAD2)
                 continue;
 
+            // Don't read every RG tag because that might slow down BAM parsing.
+            // auto x = bam_aux_get(rec, "RG");
+
             // expect pos to be sorted
             int32_t pos = rec->core.pos;
             assert(pos >= prev_pos);
@@ -191,19 +194,31 @@ int main(int argc, char **argv)
         std::cout << visible_options << std::endl;
         std::cout << std::endl;
         std::cout << "Notes:" << std::endl;
-        std::cout << "  * One cell per BAM file. Sample names and read groups are ignored." << std::endl;
+        std::cout << "  * One cell per BAM file, inclusing SM tag in header." << std::endl;
         std::cout << "  * For paired-end data, only read 1 is counted" << std::endl;
         return 1;
     }
 
 
-    // Open first sam header
-    samFile* samfile = sam_open(conf.f_in[0].string().c_str(), "r");
-    if (samfile == NULL) {
-        std::cerr << "Fail to open file " << conf.f_in[0].string() << std::endl;
-        return 1;
+    // Read sample names from headers.
+    // Keep one header throughout the program.
+    std::cout << "Reading SAM headers" << std::endl;
+    std::vector<std::string> sample_names(conf.f_in.size());
+    bam_hdr_t* hdr;
+    for(int i = 0; i < conf.f_in.size(); ++i)
+    {
+        samFile* samfile = sam_open(conf.f_in[i].string().c_str(), "r");
+        if (samfile == NULL) {
+            std::cerr << "Fail to open file " << conf.f_in[0].string() << std::endl;
+            return 1;
+        }
+        hdr = sam_hdr_read(samfile);
+        if (!get_SM_tag(hdr->text, sample_names[i])) {
+            std::cerr << "Each BAM file has to have exactly one SM tag." << std::endl << std::endl;
+            goto print_usage_and_exit;
+        }
     }
-    bam_hdr_t* hdr = sam_hdr_read(samfile);
+
 
 
     // Bin the genome
@@ -228,11 +243,6 @@ int main(int argc, char **argv)
     // add extra element for easier calculation of number of bins in last chromosome
     chrom_map.push_back((int32_t)bins.size());
 
-    /*
-    std::cout << "tid" << "\t" << "chr" << "\t" << "map" << "\t" << "size" << std::endl;
-    for (int32_t i=0; i<hdr->n_targets; ++i)
-        std::cout << i << "\t" << hdr->target_name[i] << "\t" << chrom_map[i] << "\t" << (i>0 ? chrom_map[i]-chrom_map[i-1] : -2) << std::endl;
-     */
 
 
     // Count in bins: sorted pos

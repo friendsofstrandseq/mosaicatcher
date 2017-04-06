@@ -19,7 +19,7 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include <boost/accumulators/statistics.hpp>
 #include <boost/accumulators/statistics/stats.hpp>
 #include <boost/accumulators/statistics/mean.hpp>
-
+#include <boost/algorithm/string.hpp>
 
 
 
@@ -41,8 +41,41 @@ struct Counter {
 };
 
 
-template <typename TReturn>
-using TMedianAccumulator = boost::accumulators::accumulator_set<TReturn, boost::accumulators::stats<boost::accumulators::tag::median> >;
-
-
+// from Delly
+inline bool get_SM_tag(std::string const& header, std::string& sample_name)
+{
+    std::set<std::string> smIdentifiers;
+    typedef std::vector<std::string> TStrParts;
+    TStrParts lines;
+    boost::split(lines, header, boost::is_any_of("\n"));
+    TStrParts::const_iterator itH = lines.begin();
+    TStrParts::const_iterator itHEnd = lines.end();
+    bool rgPresent = false;
+    for(;itH!=itHEnd; ++itH) {
+        if (itH->find("@RG")==0) {
+            TStrParts keyval;
+            boost::split(keyval, *itH, boost::is_any_of("\t "));
+            TStrParts::const_iterator itKV = keyval.begin();
+            TStrParts::const_iterator itKVEnd = keyval.end();
+            for(;itKV != itKVEnd; ++itKV) {
+                size_t sp = itKV->find(":");
+                if (sp != std::string::npos) {
+                    std::string field = itKV->substr(0, sp);
+                    if (field == "SM") {
+                        rgPresent = true;
+                        std::string rgSM = itKV->substr(sp+1);
+                        smIdentifiers.insert(rgSM);
+                    }
+                }
+            }
+        }
+    }
+    if (smIdentifiers.size() == 1) {
+        sample_name = *(smIdentifiers.begin());
+        return true;
+    } else {
+        sample_name = "";
+        return false;
+    }
+}
 
