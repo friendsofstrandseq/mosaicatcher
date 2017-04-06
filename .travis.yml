@@ -1,42 +1,61 @@
 # Mosaicatcher build script
+# taken from https://genbattle.bitbucket.io/blog/2016/01/17/c++-travis-ci/
 
 language: cpp
 
-sudo: false
+addons:
+  apt:
+    sources:
+    # add PPAs with more up-to-date toolchains
+    - ubuntu-toolchain-r-test
+    - llvm-toolchain-precise-3.6
+    packages:
+    # install toolchains
+    - gcc-5
+    - g++-5
+    - clang-3.6
 
 matrix:
   include:
-    - env: MYCC="gcc-4.8" MYCXX="g++-4.8"
-      os: linux
-      addons: &gcc48
+    - compiler: gcc
+      addons:
         apt:
           sources:
             - ubuntu-toolchain-r-test
           packages:
-            - g++-4.8
-
-    - env: MYCC="gcc-5" MYCXX="g++-5"
-      os: linux
-      addons: &gcc5
+            - g++-4.9
+      env: CXX=g++-4.9
+    - compiler: gcc
+      addons:
         apt:
           sources:
             - ubuntu-toolchain-r-test
           packages:
             - g++-5
-
-    - env: MYCC="gcc-6" MYCXX="g++-6"
-      os: linux
-      addons: &gcc6
+      env: CXX=g++-5
+    - compiler: clang
+      addons:
         apt:
           sources:
             - ubuntu-toolchain-r-test
+            - llvm-toolchain-precise-3.6
           packages:
-            - g++-6
+            - clang-3.6
+      env: CXX=clang++-3.6
+    - compiler: clang
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-precise-3.7
+          packages:
+            - clang-3.7
+      env: CXX=clang++-3.7
+
 
 before_script:
-  - export CXX=$MYCXX
-  - export CC=$MYCC
-  - $CXX --version
+  - echo $($CXX --version)
 
 script:
+- $CXX --version
 - make

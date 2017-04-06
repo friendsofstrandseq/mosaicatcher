@@ -10,7 +10,7 @@ BOOST_ROOT ?= ${PWD}/src/boost/
 
 # Flags
 CXX = g++
-CXXFLAGS += -fdiagnostics-color -isystem ${HTSLIB_ROOT} -isystem ${BOOST_ROOT} -std=c++11 -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS
+CXXFLAGS += -isystem ${HTSLIB_ROOT} -isystem ${BOOST_ROOT} -std=c++11 -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS
 LDFLAGS += -L${HTSLIB_ROOT} -L${BOOST_ROOT}/stage/lib -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time
 
 
