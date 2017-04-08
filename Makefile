@@ -9,8 +9,8 @@ BOOST_ROOT ?= ${PWD}/src/boost/
 
 
 # Flags
-CXX = g++
-CXXFLAGS += -fdiagnostics-color -isystem ${HTSLIB_ROOT} -isystem ${BOOST_ROOT} -std=c++11 -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS
+CXX ?= g++
+CXXFLAGS += -isystem ${HTSLIB_ROOT} -isystem ${BOOST_ROOT} -std=c++11 -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS
 LDFLAGS += -L${HTSLIB_ROOT} -L${BOOST_ROOT}/stage/lib -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time
 
 
@@ -33,17 +33,19 @@ endif
 
 
 # Sources
-MAINSOURCES = src/main.cpp $(wildcard src/*.hpp)
 HTSLIBSOURCES = $(wildcard src/htslib/*.c) $(wildcard src/htslib/*.h)
 BOOSTSOURCES = $(wildcard src/boost/libs/iostreams/include/boost/iostreams/*.hpp)
 
 
 # Targets
-TARGETS = .htslib .boost src/main
+TARGETS = .htslib .boost src/main src/calc_bins
 
 all: $(TARGETS)
 
-src/main: $(MAINSOURCES)
+src/main: .boost .htslib src/main.cpp $(wildcard src/*.hpp)
+	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
+
+src/calc_bins: .boost .htslib src/calc_bins.cpp
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 .htslib: $(HTSLIBSOURCES)
@@ -51,7 +53,6 @@ src/main: $(MAINSOURCES)
 
 .boost: $(BOOSTSOURCES)
 	cd src/boost && ./bootstrap.sh --prefix=${PWD}/src/boost --without-icu --with-libraries=iostreams,filesystem,system,program_options,date_time && ./b2 && ./b2 headers && cd ../../ && touch .boost
-
 
 clean:
 	cd src/htslib && make clean

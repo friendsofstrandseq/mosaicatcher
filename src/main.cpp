@@ -23,75 +23,67 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
+#include <boost/tokenizer.hpp>
 #include <boost/filesystem.hpp>
 #include <htslib/sam.h>
 
-#include "utils.hpp"
+#include "intervals.hpp"
+#include "counts.hpp"
 #include "distribution.hpp"
 #include "hmm.hpp"
 
-/*
-    Assumptions:
-    - BAM files sorted & indexed
-    - All mapped to same genome
-    - currently: one cell per file.
-       - for the future: All belong to same sample (SM) and have distinct read groups (ID)
-       - for the even further future: different SMs allowed.
-*/
 
 static unsigned MIN_MEDIAN_PER_SAMPLE = 20;
 static double   MIN_MEDIAN_PER_BIN    = 0.1;
-typedef std::vector<std::vector<Counter> > TGenomeCounts;
 
 
+struct Conf {
+    std::vector<boost::filesystem::path> f_in;
+    boost::filesystem::path f_out;
+    boost::filesystem::path f_bins;
+    boost::filesystem::path f_excl;
+    int minMapQual;
+    unsigned int window;
+    std::string mode;
+};
+
+struct CellInfo {
+    unsigned median_bin_count;
+    std::string sample_name;
+};
 
 std::vector<unsigned> median_by_sample(std::vector<TGenomeCounts> & counts)
 {
     std::vector<unsigned> median_by_sample(counts.size());
-
     for(unsigned i = 0; i < counts.size(); ++i) {
-
-        // calculate median count per sample:
         TMedianAccumulator<unsigned int> med_acc;
-        for (std::vector<Counter> const & count_chrom : counts[i])
-            for(Counter const & count_bin : count_chrom)
-                med_acc(count_bin.watson_count + count_bin.crick_count);
-
+        for (Counter const & count_bin : counts[i])
+            med_acc(count_bin.watson_count + count_bin.crick_count);
         median_by_sample[i] = boost::accumulators::median(med_acc);
     }
-
     return median_by_sample;
 }
 
 
 
-std::vector<std::vector<double> > median_per_bin(std::vector<TGenomeCounts> & counts)
+std::vector<double> median_per_bin(std::vector<TGenomeCounts> & counts)
 {
-    typedef std::vector<double> TVec;
-    std::vector<TVec> median_per_bin(counts[0].size());
-    for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom)
-        median_per_bin[chrom] = TVec(counts[0][chrom].size(), 0);
-
-    for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom)
+    std::vector<double> median_per_bin(counts[0].size());
+    for (unsigned bin = 0; bin < counts[0].size(); ++bin)
     {
-        if (counts[0][chrom].size() < 1) continue;
-
-        for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin)
-            {
-            TMedianAccumulator<double> med_acc;
-            for(unsigned i = 0; i < counts.size(); ++i) {
-                Counter const & cc = counts[i][chrom][bin];
-                med_acc(cc.watson_norm + cc.crick_norm);
-            }
-            median_per_bin[chrom][bin] = boost::accumulators::median(med_acc);
+        TMedianAccumulator<double> med_acc;
+        for(unsigned i = 0; i < counts.size(); ++i) {
+            Counter const & cc = counts[i][bin];
+            med_acc(cc.watson_norm + cc.crick_norm);
         }
+        median_per_bin[bin] = boost::accumulators::median(med_acc);
     }
     return median_per_bin;
 }
 
 
 
-void run_gaussian_HMM(std::vector<TGenomeCounts> & counts)
+void run_gaussian_HMM(std::vector<TGenomeCounts> & counts, std::vector<int32_t> const & chrom_map)
 {
     /*
      hmm::MultiVariateGaussianHMM hmm(12, 2);
@@ -141,38 +133,39 @@ void run_gaussian_HMM(std::vector<TGenomeCounts> & counts)
     });
 
 
-    for(unsigned i = 0; i < counts.size(); ++i) {
-        for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
+    for (unsigned i = 0; i < counts.size(); ++i) {
 
-            // Order: crick, watson, crick, watson, ...
-            std::vector<double> seq;
-            for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
-                Counter const & cc = counts[i][chrom][bin];
-                if (cc.get_label() != "none") {
-                    seq.push_back(cc.crick_norm);
-                    seq.push_back(cc.watson_norm);
+        // Order: crick, watson, crick, watson, ...
+        std::vector<double> seq;
+        unsigned chr_idx = 0;
+        for (unsigned bin = 0; bin < counts.size(); ++bin) {
+            seq.push_back(counts[i][bin].crick_norm);
+            seq.push_back(counts[i][bin].watson_norm);
+
+            // chromosome finished:
+            if (bin == chrom_map[chr_idx]) {
+                if (seq.size()>0) {
+
+                    // run HMM
+                    hmm.viterbi(seq);
+                    std::vector<std::string> path = hmm.get_path_labels();
+                    assert(path.size() == seq.size()/2);
+
+                    // write classification into Counter
+                    unsigned bin_in_path = 0;
+                    for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
+                        Counter & cc = counts[i][bin];
+                        cc.set_label(path[bin_in_path++]);
+                    }
                 }
-            }
-
-            hmm.viterbi(seq);
-            std::vector<std::string> path = hmm.get_path_labels();
-            assert(path.size() == seq.size()/2);
-
-            // write classification into Counter
-            unsigned bin_in_path = 0;
-            for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
-                Counter & cc = counts[i][chrom][bin];
-                if (cc.get_label() != "none")
-                    cc.set_label(path[bin_in_path++]);
+                seq.clear();
             }
         }
     }
-    
-
 }
 
 
-void run_bn_HMM(std::vector<TGenomeCounts> & counts, std::vector<unsigned> const & sample_median)
+void run_bn_HMM(std::vector<TGenomeCounts> & counts, std::vector<int32_t> const & chrom_map, std::vector<unsigned> const & sample_median)
 {
     assert(counts.size() == sample_median.size());
 
@@ -187,7 +180,7 @@ void run_bn_HMM(std::vector<TGenomeCounts> & counts, std::vector<unsigned> const
 
         // set n and p parameters according to a mean of "sample_median"
         // n = 1
-        double p = 0.01;
+        double p = 0.2;
         double med = (double)sample_median[i]/2;
         double n = (double)med * p / (1-p);
         hmm.set_emissions( {\
@@ -208,80 +201,58 @@ void run_bn_HMM(std::vector<TGenomeCounts> & counts, std::vector<unsigned> const
         } // end print
 
 
+        for (unsigned i = 0; i < counts.size(); ++i) {
 
-        for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom)
-        {
             // Order: crick, watson, crick, watson, ...
             std::vector<unsigned> seq;
-            for (unsigned bin = 0; bin < counts[i][chrom].size(); ++bin) {
-                Counter const & cc = counts[i][chrom][bin];
-                if (cc.get_label() != "none") {
-                    seq.push_back(cc.crick_count);
-                    seq.push_back(cc.watson_count);
+            unsigned chr_idx = 0;
+            for (unsigned bin = 0; bin < counts.size(); ++bin) {
+                seq.push_back(counts[i][bin].crick_count);
+                seq.push_back(counts[i][bin].watson_count);
+
+                // chromosome finished:
+                if (bin == chrom_map[chr_idx]) {
+                    if (seq.size()>0) {
+
+                        // run HMM
+                        hmm.viterbi(seq);
+                        std::vector<std::string> path = hmm.get_path_labels();
+                        assert(path.size() == seq.size()/2);
+
+                        // write classification into Counter
+                        unsigned bin_in_path = 0;
+                        for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
+                            Counter & cc = counts[i][bin];
+                            cc.set_label(path[bin_in_path++]);
+                        }
+                    }
+                    seq.clear();
                 }
-            }
-
-            std::cout << "Log likelihood in sample " << i << " = " << hmm.viterbi(seq) << std::endl;
-            std::vector<std::string> path = hmm.get_path_labels();
-            assert(path.size() == seq.size()/2);
-
-            // write classification into Counter
-            unsigned bin_in_path = 0;
-            for (unsigned bin = 0; bin < counts[i][chrom].size(); ++bin) {
-                Counter & cc = counts[i][chrom][bin];
-                if (cc.get_label() != "none")
-                    cc.set_label(path[bin_in_path++]);
             }
         }
     }
 }
 
 
-
 int main(int argc, char **argv)
 {
-
-    // Plot some test values for NB
-    bool plot_NB = false;
-    if (plot_NB)
-    {
-        std::ofstream outfile("/Users/meiers/work/projects/strseq/data/test");
-        unsigned max = 100;
-        std::vector<unsigned> ks(max);
-        for (unsigned k=0; k<max; ++k)
-            ks[k] = k;
-        std::vector<unsigned>::const_iterator k_iter = ks.begin();
-
-        std::vector<double> ps = {0.1,    0.2,   0.25,   0.5};
-        std::vector<double> ns = {2.2222, 5,     6.6666, 20 };
-
-        outfile << "n\tp\tk\tp(k)" << std::endl;
-        for (unsigned i=0;  i< ps.size(); ++i) {
-            hmm::NegativeBinomial nb(ps[i],  ns[i]);
-            std::cout << nb << std::endl;
-            for(unsigned k=0; k<max; ++k)
-                outfile << ns[i] << "\t" << ps[i] << "\t" << k << "\t" << nb.calc_emission(k_iter + k) << std::endl;
-        }
-        outfile.close();
-    }
-
-
 
     // Command line options
     Conf conf;
     boost::program_options::options_description generic("Generic options");
     generic.add_options()
-        ("help,?", "show help message")
-        ("mapq,q", boost::program_options::value<int>(&conf.minMapQual)->default_value(10), "min mapping quality")
-        ("window,w", boost::program_options::value<unsigned int>(&conf.window)->default_value(1000000), "window size")
-        ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt"), "output file for counts")
-        ("mode,m", boost::program_options::value<std::string>(&conf.mode)->default_value("count"), "what to compute (count|classify)")
-        ;
+    ("help,?", "show help message")
+    ("mapq,q", boost::program_options::value<int>(&conf.minMapQual)->default_value(10), "min mapping quality")
+    ("window,w", boost::program_options::value<unsigned int>(&conf.window)->default_value(1000000), "window size of fixed windows")
+    ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt"), "output file for counts")
+    ("bins,b", boost::program_options::value<boost::filesystem::path>(&conf.f_bins), "variable bin file (BED format, mutually exclusive to -w)")
+    ("exclude,x", boost::program_options::value<boost::filesystem::path>(&conf.f_excl), "Exclude chromosomes (mutually exclusive to -b)")
+    ;
 
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
-        ("input-file", boost::program_options::value<std::vector<boost::filesystem::path> >(&conf.f_in), "input bam file(s)")
-        ;
+    ("input-file", boost::program_options::value<std::vector<boost::filesystem::path> >(&conf.f_in), "input bam file(s)")
+    ;
 
     boost::program_options::positional_options_description pos_args;
     pos_args.add("input-file", -1);
@@ -295,106 +266,108 @@ int main(int argc, char **argv)
     boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(pos_args).run(), vm);
     boost::program_options::notify(vm);
 
-
     // Check command line arguments
-    if ((vm.count("help")) || (!vm.count("input-file")) || !(conf.mode == "count" || conf.mode == "classify")) {
+    if (!vm["window"].defaulted() && vm.count("bins")) {
+        std::cerr << "Error: -w and -b cannot be specified together" << std::endl << std::endl;
+        goto print_usage_and_exit;
+    }
+    if (vm.count("bins") && vm.count("exclude")) {
+        std::cerr << "Error: Exclude chromosomes (-x) have no effect when -b is specifiet. Stop" << std::endl << std::endl;
+        goto print_usage_and_exit;
+    }
+    if (vm.count("help") || !vm.count("input-file"))
+    {
+    print_usage_and_exit:
         std::cout << "Usage: " << argv[0] << " [OPTIONS] <strand.seq1.bam> <strand.seq2.bam> ... <strand.seqN.bam>" << std::endl;
-        std::cout << visible_options << "\n";
+        std::cout << visible_options << std::endl;
+        std::cout << std::endl;
+        std::cout << "Notes:" << std::endl;
+        std::cout << "  * Reads are counted by start position" << std::endl;
+        std::cout << "  * One cell per BAM file, inclusing SM tag in header" << std::endl;
+        std::cout << "  * For paired-end data, only read 1 is counted" << std::endl;
         return 1;
-    } 
+    }
 
+
+    // global variables
+    bam_hdr_t* hdr = NULL;
+    std::vector<CellInfo>      cells(conf.f_in.size());
+    std::vector<Interval>      bins;
+    std::vector<int32_t>       chrom_map;
+    std::vector<TGenomeCounts> counts(conf.f_in.size());
+
+
+
+    // Read sample names from headers.
+    // Keep one header throughout the program.
+    std::cout << "Reading SAM headers" << std::endl;
+    for(int i = 0; i < conf.f_in.size(); ++i)
+    {
+        samFile* samfile = sam_open(conf.f_in[i].string().c_str(), "r");
+        if (samfile == NULL) {
+            std::cerr << "Fail to open file " << conf.f_in[0].string() << std::endl;
+            return 1;
+        }
+        hdr = sam_hdr_read(samfile);
+        if (!get_SM_tag(hdr->text, cells[i].sample_name)) {
+            std::cerr << "Each BAM file has to have exactly one SM tag." << std::endl << std::endl;
+            goto print_usage_and_exit;
+        }
+    }
+
+
+
+    // Bin the genome
+    chrom_map = std::vector<int32_t>(hdr->n_targets, -1);
+    if (vm.count("bins"))
+    {
+        if (!read_dynamic_bins(bins, chrom_map, conf.f_bins.string().c_str(), hdr))
+            return 1;
+    }
+    else
+    {
+        std::vector<Interval> exclude;
+        if (vm.count("exclude")) {
+            read_exclude_file(conf.f_excl.string(), hdr, exclude);
+            sort(exclude.begin(), exclude.end(), interval_comp);
+        }
+        std::cout << "Exclude " << exclude.size() << " regions" << std::endl;
+        create_fixed_bins(bins, chrom_map, conf.window, exclude, hdr);
+    }
+    // add last element for easy calculation of number of bins
+    chrom_map.push_back((int32_t)bins.size());
 
 
 
     // Count in bins
-    std::vector<TGenomeCounts> counts;
-    counts.resize(conf.f_in.size());
-    // Keep one header
-    bam_hdr_t* hdr;
-
-    for(unsigned i = 0; i < counts.size(); ++i) {
-
-
-        // Open bam file
-        samFile* samfile = sam_open(conf.f_in[i].string().c_str(), "r");
-        if (samfile == NULL) {
-            std::cerr << "Fail to open file " << conf.f_in[i].string() << std::endl;
-            return 1;
-        }
-        hts_idx_t* idx = sam_index_load(samfile, conf.f_in[i].string().c_str());
-        if (idx == NULL) {
-            std::cerr << "Fail to open index for " << conf.f_in[i].string() << std::endl;
-            return 1;
-        }
-        // for now: keep just one single header for all
-        if (i==0)
-            hdr = sam_hdr_read(samfile);
-
-
-        std::cout << "Reading " << conf.f_in[i].string() << std::endl;
-        counts[i].resize(hdr->n_targets);
-        for (int chrom = 0; chrom < hdr->n_targets; ++chrom) {
-
-            if (hdr->target_len[chrom] < conf.window)
-                continue;
-            int bins = hdr->target_len[chrom] / conf.window + 1;
-            std::vector<Counter> & counter = counts[i][chrom];
-            counter.resize(bins, Counter());
-
-            hts_itr_t* iter = sam_itr_queryi(idx, chrom, 0, hdr->target_len[chrom]);
-            bam1_t* rec = bam_init1();
-            while (sam_itr_next(samfile, iter, rec) >= 0) {
-                if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP))
-                    continue;
-                if ((rec->core.qual < conf.minMapQual) || (rec->core.tid<0)) 
-                    continue;
-
-                int32_t pos = rec->core.pos + alignmentLength(rec)/2;
-                if (rec->core.flag & BAM_FREAD2)
-                    continue;
-                    //if (rec->core.flag & BAM_FREVERSE)
-                    //    ++( counter[(int) (pos / conf.window)].crick_count );
-                    //else
-                    //    ++( counter[(int) (pos / conf.window)].watson_count );
-                // Crick = + strand, watson = - strand
-                else // also for unpaired reads
-                    if (rec->core.flag & BAM_FREVERSE) 
-                        ++( counter[(int) (pos / conf.window)].watson_count );
-                    else 
-                        ++( counter[(int) (pos / conf.window)].crick_count );
-            }
-            bam_destroy1(rec);
-            hts_itr_destroy(iter);
-        }
-
-        hts_idx_destroy(idx);
-        sam_close(samfile);
-    }
-
-
- 
-    // mode "raw": print raw counts
-    if (conf.mode == "count")
+    for(int i = 0; i < counts.size(); ++i)
     {
-        std::cout << "Writing file " << conf.f_out.string() << std::endl;
-        std::ofstream out(conf.f_out.string());
-        out << "chrom\tstart\tend\tsample\tw\tc" << std::endl;
-        for(unsigned i = 0; i < counts.size(); ++i) {
-            for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
-                for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
-                    Counter & cc = counts[i][chrom][bin];
-                    out << hdr->target_name[chrom];
-                    out << "\t" << bin*conf.window << "\t" << (bin+1)*conf.window;
-                    out << "\t" << conf.f_in[i].filename().string();
-                    out << "\t" << cc.watson_count;
-                    out << "\t" << cc.crick_count;
-                    out << std::endl;
-                }
-            }
+        if (!count_sorted_reads(conf.f_in[i].string(), bins, chrom_map, hdr, conf.minMapQual, counts[i])) {
+            std::cerr << "Ignore sample " << conf.f_in[i].string() << std::endl;
+            counts.erase(counts.begin()+i);
+            --i;
         }
-        out.close();
-        return(0);
+
+        // todo: kick out samples if median is too low
     }
+
+    // Mode
+    std::cout << "Writing " << conf.f_out.string() << std::endl;
+    std::ofstream out(conf.f_out.string());
+    out << "chrom\tstart\tend\tsample\tw\tc" << std::endl;
+    for(unsigned i = 0; i < counts.size(); ++i) {
+        for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
+            out << hdr->target_name[bins[bin].chr];
+            out << "\t" << bins[bin].start << "\t" << bins[bin].end;
+            out << "\t" << conf.f_in[i].filename().string();
+            out << "\t" << counts[i][bin].watson_count;
+            out << "\t" << counts[i][bin].crick_count;
+            out << std::endl;
+        }
+    }
+    out.close();
+
+    // todo: string comparisons as labels --> replace by faster type (e.g. enum)
 
 
 
@@ -413,36 +386,19 @@ int main(int argc, char **argv)
             std::cout << "    Todo(!): Ignoring sample " << i << std::endl;
             continue;
         }
-        for (std::vector<Counter> & count_chrom : counts[i]) {
-            for(Counter & cc : count_chrom) {
-                cc.watson_norm = cc.watson_count / (double)sample_median[i] * 2;
-                cc.crick_norm  = cc.crick_count  / (double)sample_median[i] * 2;
-            }
+        for(Counter & cc : counts[i]) {
+            cc.watson_norm = cc.watson_count / (double)sample_median[i] * 2;
+            cc.crick_norm  = cc.crick_count  / (double)sample_median[i] * 2;
         }
     }
-
-    // 2. Calculate median per bin (blacklisting)
-    std::vector<std::vector<double> > bin_median = median_per_bin(counts);
-    for(unsigned i = 0; i < counts.size(); ++i) {
-        for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
-            for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
-                Counter & cc = counts[i][chrom][bin];
-                if (bin_median[chrom][bin] < MIN_MEDIAN_PER_BIN)
-                    cc.set_label("none");
-            }
-        }
-    }
-
-    // todo: string comparisons as labels --> replace by faster type (e.g. enum)
-
 
 
     // 3. Run HMM
     bool gauss=false;
     if (gauss)
-        run_gaussian_HMM(counts);
+        run_gaussian_HMM(counts, chrom_map);
     else
-        run_bn_HMM(counts, sample_median);
+        run_bn_HMM(counts, chrom_map, sample_median);
 
 
 
@@ -453,19 +409,18 @@ int main(int argc, char **argv)
         std::ofstream out(conf.f_out.string());
         out << "chrom\tstart\tend\tsample\tw\tc\twn\tcn\tclass" << std::endl;
         for(unsigned i = 0; i < counts.size(); ++i) {
-            for (unsigned chrom = 0; chrom < counts[0].size(); ++chrom) {
-                for (unsigned bin = 0; bin < counts[0][chrom].size(); ++bin) {
-                    Counter & cc = counts[i][chrom][bin];
-                    out << hdr->target_name[chrom];
-                    out << "\t" << bin*conf.window << "\t" << (bin+1)*conf.window;
-                    out << "\t" << conf.f_in[i].filename().string();
-                    out << "\t" << cc.watson_count;
-                    out << "\t" << cc.crick_count;
-                    out << "\t" << cc.watson_norm;
-                    out << "\t" << cc.crick_norm;
-                    out << "\t" << cc.get_label();
-                    out << std::endl;
-                }
+            unsigned chrom = 0;
+            for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
+                Counter & cc = counts[i][bin];
+                out << hdr->target_name[bins[bin].chr];
+                out << "\t" << bins[bin].start << "\t" << bins[bin].end;
+                out << "\t" << conf.f_in[i].filename().string();
+                out << "\t" << cc.watson_count;
+                out << "\t" << cc.crick_count;
+                out << "\t" << cc.watson_norm;
+                out << "\t" << cc.crick_norm;
+                out << "\t" << cc.get_label();
+                out << std::endl;
             }
         }
         out.close();
@@ -475,5 +430,5 @@ int main(int argc, char **argv)
 
     // nothing here
 
-    return 0;
+    return(0);
 }
