@@ -89,12 +89,12 @@ namespace hmm {
             distributions = e; // copy!
         }
 
-        std::vector<uint8_t> const & get_path()
+        std::vector<uint8_t> const & get_path() const
         {
             return path;
         }
 
-        std::vector<std::string> get_path_labels() {
+        std::vector<std::string> get_path_labels() const {
             std::vector<std::string> labels;
             for (unsigned i=0; i<path.size(); i++) {
                 assert(path[i] < N);
@@ -232,9 +232,7 @@ namespace hmm {
 
 
         // print
-        bool print_matrix = true;
-        if (print_matrix)
-        {
+        if (false) {
                         it = seq.begin();
                         log_emission = calc_log_emissions(it);
                         it += dim; // First observation was already processed
@@ -284,6 +282,47 @@ namespace hmm {
     }
 
     //template HMM<double, MultiVariate<Gaussian> >;
+
+
+
+
+
+
+
+
+
+    template <typename THMM>
+    void run_HMM(THMM & hmm, TGenomeCounts & counts, std::vector<int32_t> const & chrom_map)
+    {
+        for (int32_t chrom = 0; chrom < chrom_map.size()-1; ++chrom) {
+
+            // skip empty chromosomes
+            if (chrom_map[chrom+1] - chrom_map[chrom] < 1)
+                continue;
+
+            // Order: crick, watson, crick, watson, ...
+            std::vector<unsigned> seq;
+            for (unsigned bin = chrom_map[chrom]; bin < chrom_map[chrom+1]; ++bin) {
+                seq.push_back(counts[bin].crick_count);
+                seq.push_back(counts[bin].watson_count);
+            }
+
+            // Run viterbi
+            hmm.viterbi(seq);
+            std::vector<std::string> path = hmm.get_path_labels();
+            assert(path.size() == (chrom_map[chrom+1] - chrom_map[chrom]));
+
+            // write classification into Counter
+            unsigned bin_in_path = 0;
+            for (unsigned j = chrom_map[chrom]; j < chrom_map[chrom+1]; ++j)
+                counts[j].set_label(path[bin_in_path++]);
+        }
+    }
+
+
+
+
+
 
 }
 #endif /* hmm_hpp */

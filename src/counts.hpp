@@ -7,16 +7,21 @@ struct Counter {
     static const std::vector<std::string> label_names;
     static const std::map<std::string, uint8_t> label_id;
     unsigned int watson_count, crick_count;
+    // todo: remove watson_norm & crick_norm
     double watson_norm, crick_norm;
     uint8_t label;
+    unsigned secondary_count;
 
-    Counter() : watson_count(0), crick_count(0), watson_norm(0), crick_norm(0), label(0)
+    Counter() : watson_count(0), crick_count(0), watson_norm(0), crick_norm(0), label(0), secondary_count(0)
     {}
 
     bool set_label(std::string const & s) {
         auto iter = label_id.find(s);
         assert(iter != label_id.end());
-        if (iter == label_id.end()) return false;
+        if (iter == label_id.end()) {
+            label  = 1; // none
+            return false;
+        }
         label = iter->second;
         return true;
     }
@@ -39,6 +44,15 @@ const std::map<std::string, uint8_t> Counter::label_id = {
 typedef std::vector<Counter> TGenomeCounts;
 
 
+struct CellInfo {
+    unsigned median_bin_count;
+    std::string sample_name;
+    int32_t id;
+    // read counts
+    unsigned total, pcr_dups, secondary, read2s, low_mapq;
+    CellInfo() : median_bin_count(0), id(-1), total(0), pcr_dups(0), secondary(0), read2s(0), low_mapq(0) {}
+};
+
 
 
 /**
@@ -52,7 +66,8 @@ bool count_sorted_reads(std::string const & filename,
                         std::vector<int32_t> const & chrom_map,
                         bam_hdr_t * hdr,
                         int min_map_qual,
-                        TGenomeCounts & counts)
+                        TGenomeCounts & counts,
+                        CellInfo & cell)
 {
 
     // Open bam file
@@ -84,15 +99,13 @@ bool count_sorted_reads(std::string const & filename,
         while (sam_itr_next(samfile, iter, rec) >= 0) {
 
             // Ignore certain reads
-            if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP))
+            cell.total++;
+            if (rec->core.flag & (BAM_FSUPPLEMENTARY | BAM_FQCFAIL | BAM_FUNMAP)) {
                 continue;
-            if ((rec->core.qual < min_map_qual) || (rec->core.tid<0))
+            } if (rec->core.flag & BAM_FDUP) {
+                ++(cell.pcr_dups);
                 continue;
-            if (rec->core.flag & BAM_FREAD2)
-                continue;
-
-            // Don't read every RG tag because that might slow down BAM parsing.
-            // auto x = bam_aux_get(rec, "RG");
+            }
 
             // expect pos to be sorted
             int32_t pos = rec->core.pos;
@@ -110,18 +123,25 @@ bool count_sorted_reads(std::string const & filename,
 
             assert(pos >= bins[bin].start && pos < bins[bin].end);
 
-            if (rec->core.flag & BAM_FREAD2)
+            // Don't read every RG tag because that might slow down BAM parsing.
+            // auto x = bam_aux_get(rec, "RG");
+
+            if (rec->core.flag & BAM_FSECONDARY) {
+                ++(cell.secondary);
+                ++(counts[bin].secondary_count);
                 continue;
-            //if (rec->core.flag & BAM_FREVERSE)
-            //    ++( counter[(int) (pos / conf.window)].crick_count );
-            //else
-            //    ++( counter[(int) (pos / conf.window)].watson_count );
-            // Crick = + strand, watson = - strand
-            else // also for unpaired reads
-                if (rec->core.flag & BAM_FREVERSE)
-                    ++( counts[bin].watson_count );
-                else
-                    ++( counts[bin].crick_count );
+            } if ((rec->core.qual < min_map_qual) || (rec->core.tid<0)) {
+                ++(cell.low_mapq);
+                continue;
+            } if (rec->core.flag & BAM_FREAD2) {
+                ++(cell.read2s);
+                continue;
+            }
+
+            if (rec->core.flag & BAM_FREVERSE)
+                ++( counts[bin].watson_count );
+            else
+                ++( counts[bin].crick_count );
         }
     end_of_chromosome:
         bam_destroy1(rec);
