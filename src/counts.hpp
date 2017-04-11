@@ -7,12 +7,10 @@ struct Counter {
     static const std::vector<std::string> label_names;
     static const std::map<std::string, uint8_t> label_id;
     unsigned int watson_count, crick_count;
-    // todo: remove watson_norm & crick_norm
-    double watson_norm, crick_norm;
     std::string label;
     unsigned secondary_count;
 
-    Counter() : watson_count(0), crick_count(0), watson_norm(0), crick_norm(0), secondary_count(0)
+    Counter() : watson_count(0), crick_count(0), label("NA"), secondary_count(0)
     {}
 
     bool set_label(std::string const & s) {
