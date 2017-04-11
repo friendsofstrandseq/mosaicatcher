@@ -16,8 +16,8 @@ format_Mb <- function(x) {
 
 # Read counts & filter chromosomes
 d = fread(f_in)
-d = d[grepl('^chr[0-9XY]+$', chrom),]
-d = d[, chrom := factor(chrom, levels=paste0('chr', c(1:22,'X','Y')), ordered = T)]
+d = d[grepl('^(chr)?[0-9XY]+$', chrom),]
+d = d[, chrom := factor(chrom, levels=unique(chrom), ordered=T)]
 
 perSample <- d[, .(median = median(w+c)), by = .(sample, cell)]
 
@@ -50,8 +50,8 @@ for (sample_ in unique(d$sample))
     
         if (hmm_labels_present) {
             plt <- plt +
-                geom_rect(aes(xmin = start, xmax=end, ymin=-2*reads_per_bin, ymax=2*reads_per_bin, fill=class), inherit.aes=F, alpha=0.25) +
-                scale_fill_manual(values = c("WC" = "darkolivegreen2", "CC" = "lightskyblue1", "WW" = "orange"))
+                geom_rect(aes(xmin = start, xmax=end, ymin=-2*reads_per_bin, ymax=2*reads_per_bin, fill=class), inherit.aes=F, alpha=0.25)
+                #scale_fill_manual(values = c("WC" = "darkolivegreen2", "CC" = "lightskyblue1", "WW" = "orange"))
         } else {
             plt <- plt +
                 geom_rect(aes(xmin = start, xmax=end, ymin=-2*reads_per_bin, ymax=2*reads_per_bin, fill=rand_bg), inherit.aes=F, alpha=0.25)
