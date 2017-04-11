@@ -9,35 +9,20 @@ struct Counter {
     unsigned int watson_count, crick_count;
     // todo: remove watson_norm & crick_norm
     double watson_norm, crick_norm;
-    uint8_t label;
+    std::string label;
     unsigned secondary_count;
 
-    Counter() : watson_count(0), crick_count(0), watson_norm(0), crick_norm(0), label(0), secondary_count(0)
+    Counter() : watson_count(0), crick_count(0), watson_norm(0), crick_norm(0), secondary_count(0)
     {}
 
     bool set_label(std::string const & s) {
-        auto iter = label_id.find(s);
-        assert(iter != label_id.end());
-        if (iter == label_id.end()) {
-            label  = 1; // none
-            return false;
-        }
-        label = iter->second;
+        label = s;
         return true;
     }
 
     std::string get_label() const {
-        assert(label < label_names.size());
-        return label_names[label];
+        return label;
     }
-};
-const std::vector<std::string> Counter::label_names = {"unset", "none", "WW", "WC", "CC"};
-const std::map<std::string, uint8_t> Counter::label_id = {
-    {"unset",0},
-    {"none", 1},
-    {"WW",   2},
-    {"WC",   3},
-    {"CC",   4},
 };
 
 
