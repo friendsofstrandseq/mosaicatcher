@@ -71,9 +71,9 @@ namespace hmm {
             }
         }
 
-        void setInitials(std::vector<double> const & ini) {
+        void set_initials(std::vector<double> const & ini) {
             assert(ini.size() == N);
-            assert(sum(ini) == 1.0);
+            assert(abs(1 - sum(ini)) < INPUT_PRECISION);
             for (uint8_t i=0; i<N; ++i)
                 pi[i] = ini[i];
         }

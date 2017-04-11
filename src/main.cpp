@@ -348,7 +348,7 @@ int main(int argc, char **argv)
 
 
     // Print cell information:
-    std::cout << std::endl << "sample\tcell\ttotal\tduplicates\tsupplementary" << std::endl;
+    std::cout << std::endl << "sample\tcell\ttotal\tduplicates\tsecondary" << std::endl;
     // do not sort, so cells == counts == conf.f_in
     // sort(cells.begin(), cells.end(), [] (CellInfo const & a, CellInfo const & b) {if (a.sample_name==b.sample_name) { return a.id < b.id;} else {return a.sample_name < b.sample_name;} } );
     for (CellInfo const & cell : cells) {
@@ -401,21 +401,67 @@ int main(int argc, char **argv)
     // todo
     double p = 0.1;
 
-
     // Set up and run HMM:
-    hmm::HMM<unsigned, hmm::MultiVariate<hmm::NegativeBinomial> > hmm({"WW", "WC", "CC"});
-    hmm.set_transitions({\
-        .998,  .001, .001, \
-        .001, .998, .001, \
-        .001, .001, .998 });
+    hmm::HMM<unsigned, hmm::MultiVariate<hmm::NegativeBinomial> > hmm({
+        "WW", "WC", "CC", "0", "W", "C", "WWW", "WWC", "WCC", "CCC", "WWWW", "WWWC", "WWCC", "WCCC", "CCCC"});
+
+
+    {
+        double ini  = .03;  // Initial probability for non-diploid states
+        double chng = .001; // trans prob to jump into other, non-diploid state
+        double dipl = .030; // trans prob to jump back to any diploid state
+
+        // calculated:
+        double in2 = (1 - 12*ini)/3;
+        double st1 = 1 - 3*dipl -11*chng;
+        double st2 = 1 - 2*dipl -12*chng;
+        assert(in2 > 0);
+        assert(st1>0.8 && st1 <1);
+        assert(st2>0.8 && st2 <1);
+
+        //   WW    WC    CC   0     W     C     WWW   WWC   WCC   CCC  WWWW  WWWC  WWCC  WCCC  CCCC
+        hmm.set_initials({
+            in2,  in2,  in2,  ini,  ini,  ini,  ini,  ini,  ini,  ini,  ini,  ini,  ini,  ini,  ini});
+        hmm.set_transitions({
+            st2,  dipl, dipl, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, // WW
+            dipl, st2,  dipl, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, // WC
+            dipl, dipl, st2,  chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, // CC
+            dipl, dipl, dipl, st1,  chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, // 0
+            dipl, dipl, dipl, chng,  st1, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, // W
+            dipl, dipl, dipl, chng, chng,  st1, chng, chng, chng, chng, chng, chng, chng, chng, chng, // C
+            dipl, dipl, dipl, chng, chng, chng,  st1, chng, chng, chng, chng, chng, chng, chng, chng, // WWW
+            dipl, dipl, dipl, chng, chng, chng, chng,  st1, chng, chng, chng, chng, chng, chng, chng, // WWC
+            dipl, dipl, dipl, chng, chng, chng, chng, chng,  st1, chng, chng, chng, chng, chng, chng, // WCC
+            dipl, dipl, dipl, chng, chng, chng, chng, chng, chng,  st1, chng, chng, chng, chng, chng, // CCC
+            dipl, dipl, dipl, chng, chng, chng, chng, chng, chng, chng,  st1, chng, chng, chng, chng, // WWWW
+            dipl, dipl, dipl, chng, chng, chng, chng, chng, chng, chng, chng,  st1, chng, chng, chng, // WWWC
+            dipl, dipl, dipl, chng, chng, chng, chng, chng, chng, chng, chng, chng,  st1, chng, chng, // WWCC
+            dipl, dipl, dipl, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng,  st1, chng, // WCCC
+            dipl, dipl, dipl, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng,  st1, // CCCC
+        });
+    }
+
     for (unsigned i=0; i<counts.size(); ++i)
     {
         // set n and p parameters according to a mean of sample
         double n = (double)cells[i].median_bin_count / 2 * p / (1-p);
+        double z = 0.5; // mean in zero bins
         hmm.set_emissions( {\
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,  1)}),
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,  n)}),
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  1), hmm::NegativeBinomial(p,2*n)})
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,  z)}), // WW
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,  n)}), // WC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,2*n)}), // CC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,  z)}), // 0
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,  z)}), // W
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,  n)}), // C
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,3*n), hmm::NegativeBinomial(p,  z)}), // WWW
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,  n)}), // WWC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,2*n)}), // WCC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,3*n)}), // CCC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,4*n), hmm::NegativeBinomial(p,  z)}), // WWWW
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,3*n), hmm::NegativeBinomial(p,  n)}), // WWWC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,2*n)}), // WWCC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,3*n)}), // WCCC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,4*n)})  // CCCC
         });
         run_HMM(hmm, counts[i], chrom_map);
     }
@@ -428,16 +474,10 @@ int main(int argc, char **argv)
     {
         std::cout << "Writing file " << conf.f_out.string() << std::endl;
         std::ofstream out(conf.f_out.string());
-        out << "chrom\tstart\tend\tsample\tcell\tc\tw\tclass\teWW\teWC\teCC" << std::endl;
+        out << "chrom\tstart\tend\tsample\tcell\tc\tw\tclass" << std::endl;
         for(unsigned i = 0; i < counts.size(); ++i) {
             for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
                 Counter & cc = counts[i][bin];
-
-                // get emission probs for the different states:
-                std::vector<unsigned> mini_seq = {cc.crick_count, cc.watson_count};
-                auto emission_probs = hmm.calc_log_emissions(mini_seq.begin());
-                assert(emission_probs.size()==3);
-
                 out << hdr->target_name[bins[bin].chr];
                 out << "\t" << bins[bin].start << "\t" << bins[bin].end;
                 out << "\t" << cells[i].sample_name;
@@ -445,9 +485,6 @@ int main(int argc, char **argv)
                 out << "\t" << cc.crick_count;
                 out << "\t" << cc.watson_count;
                 out << "\t" << cc.get_label();
-                out << "\t" << emission_probs[0];
-                out << "\t" << emission_probs[1];
-                out << "\t" << emission_probs[2];
                 out << std::endl;
             }
         }
