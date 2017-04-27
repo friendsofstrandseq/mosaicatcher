@@ -17,6 +17,7 @@
 #include <boost/program_options/variables_map.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/progress.hpp>
 #include <htslib/sam.h>
 
 
@@ -97,6 +98,12 @@ int main(int argc, char **argv)
         }
     }
 
+    unsigned n_chroms = 0;
+    for (int chrom = 0; chrom < hdr->n_targets; ++chrom)
+        if (!excl_chroms.count(hdr->target_name[chrom]))
+            ++n_chroms;
+    boost::progress_display show_progress( n_chroms );
+
 
     // Save all positions in vector (sampled to every n-th position)
     std::vector<std::vector<uint32_t> > positions;
@@ -108,6 +115,7 @@ int main(int argc, char **argv)
         positions.push_back(std::vector<uint32_t>());
         tids.push_back(chrom);
 
+        ++show_progress;
         unsigned n_reads = 0;
         hts_itr_t* iter = sam_itr_queryi(idx, chrom, 0, hdr->target_len[chrom]);
         bam1_t* rec = bam_init1();
