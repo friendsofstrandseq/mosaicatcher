@@ -25,21 +25,10 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include <boost/program_options/variables_map.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/filesystem.hpp>
-
 #include <htslib/sam.h>
+
 #include "intervals.hpp"
-#include "utils.hpp"
-
-/*
-    Assumptions:
-    - BAM files sorted & indexed
-    - All mapped to same genome
-    - currently: one cell per file.
-       - for the future: All belong to same sample (SM) and have distinct read groups (ID)
-       - for the even further future: different SMs allowed.
-*/
-
-typedef std::vector<Counter> TGenomeCounts;
+#include "counts.hpp"
 
 
 struct Conf {
@@ -47,109 +36,32 @@ struct Conf {
     boost::filesystem::path f_out;
     boost::filesystem::path f_bins;
     boost::filesystem::path f_excl;
+    boost::filesystem::path f_info;
     int minMapQual;
     unsigned int window;
     std::string mode;
 };
 
-
-/**
- *  count_sorted_reads
- *  ------------------
- *  Count start positions, which are expected to be sorted, into sorted bins.
- *  Suitable for both fixed and variable-width bins.
- */
-bool count_sorted_reads(std::string const & filename,
-                                std::vector<Interval> const & bins,
-                                std::vector<int32_t> const & chrom_map,
-                                bam_hdr_t * hdr,
-                                int min_map_qual,
-                                TGenomeCounts & counts)
+std::vector<unsigned> median_by_sample(std::vector<TGenomeCounts> & counts)
 {
-
-    // Open bam file
-    samFile* samfile = sam_open(filename.c_str(), "r");
-    if (samfile == NULL) {
-        std::cerr << "Fail to open file " << filename << std::endl;
-        return false;
+    std::vector<unsigned> median_by_sample(counts.size());
+    for(unsigned i = 0; i < counts.size(); ++i) {
+        TMedianAccumulator<unsigned int> med_acc;
+        for (Counter const & count_bin : counts[i])
+            med_acc(count_bin.watson_count + count_bin.crick_count);
+        median_by_sample[i] = boost::accumulators::median(med_acc);
     }
-    hts_idx_t* idx = sam_index_load(samfile, filename.c_str());
-    if (idx == NULL) {
-        std::cerr << "Fail to open index for " << filename << std::endl;
-        return false;
-    }
-
-    std::cout << "Reading " << filename << std::endl;
-    counts.resize(bins.size(), Counter());
-
-    // access samfile chrom per chrom
-    for (int32_t chrom = 0; chrom < hdr->n_targets; ++chrom) {
-
-        // skip chromosomes with no bins
-        if (chrom_map[chrom+1] - chrom_map[chrom] < 1)
-            continue;
-
-        unsigned bin = chrom_map[chrom];
-        int32_t prev_pos = 0;
-        hts_itr_t* iter = sam_itr_queryi(idx, chrom, 0, hdr->target_len[chrom]);
-        bam1_t* rec = bam_init1();
-        while (sam_itr_next(samfile, iter, rec) >= 0) {
-
-            // Ignore certain reads
-            if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP))
-                continue;
-            if ((rec->core.qual < min_map_qual) || (rec->core.tid<0))
-                continue;
-            if (rec->core.flag & BAM_FREAD2)
-                continue;
-
-            // Don't read every RG tag because that might slow down BAM parsing.
-            // auto x = bam_aux_get(rec, "RG");
-
-            // expect pos to be sorted
-            int32_t pos = rec->core.pos;
-            assert(pos >= prev_pos);
-
-            // skip all bins left of this position.
-            // Stop when all bins of the chromosome are done
-            while (pos >= bins[bin].end)
-                if (bin++ == chrom_map[chrom+1])
-                    goto end_of_chromosome;
-
-            // Ignore reads before until we reach the start of a bin
-            if (pos < bins[bin].start)
-                continue;
-
-            assert(pos >= bins[bin].start && pos < bins[bin].end);
-
-            if (rec->core.flag & BAM_FREAD2)
-                continue;
-            //if (rec->core.flag & BAM_FREVERSE)
-            //    ++( counter[(int) (pos / conf.window)].crick_count );
-            //else
-            //    ++( counter[(int) (pos / conf.window)].watson_count );
-            // Crick = + strand, watson = - strand
-            else // also for unpaired reads
-                if (rec->core.flag & BAM_FREVERSE)
-                    ++( counts[bin].watson_count );
-                else
-                    ++( counts[bin].crick_count );
-        }
-    end_of_chromosome:
-        bam_destroy1(rec);
-        hts_itr_destroy(iter);
-    }
-
-    hts_idx_destroy(idx);
-    sam_close(samfile);
-    return true;
+    return median_by_sample;
 }
+
 
 
 
 
 int main(int argc, char **argv)
 {
+
+    // Command line options
     Conf conf;
     boost::program_options::options_description generic("Generic options");
     generic.add_options()
@@ -159,6 +71,7 @@ int main(int argc, char **argv)
     ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt"), "output file for counts")
     ("bins,b", boost::program_options::value<boost::filesystem::path>(&conf.f_bins), "variable bin file (BED format, mutually exclusive to -w)")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&conf.f_excl), "Exclude chromosomes (mutually exclusive to -b)")
+    ("info,i", boost::program_options::value<boost::filesystem::path>(&conf.f_info), "Write info about samples")
     ;
 
     boost::program_options::options_description hidden("Hidden options");
@@ -184,9 +97,10 @@ int main(int argc, char **argv)
         goto print_usage_and_exit;
     }
     if (vm.count("bins") && vm.count("exclude")) {
-        std::cerr << "Error: Exclude chromosomes (-x) have no effect when -b is specifiet. Stop" << std::endl << std::endl;
+        std::cerr << "Error: Exclude chromosomes (-x) have no effect when -b is specified. Stop" << std::endl << std::endl;
         goto print_usage_and_exit;
     }
+
     if (vm.count("help") || !vm.count("input-file"))
     {
     print_usage_and_exit:
@@ -201,34 +115,47 @@ int main(int argc, char **argv)
     }
 
 
+    // global variables
+    bam_hdr_t* hdr = NULL;
+    std::vector<CellInfo>      cells(conf.f_in.size());
+    std::vector<Interval>      bins;
+    std::vector<int32_t>       chrom_map;
+    std::vector<TGenomeCounts> counts(conf.f_in.size());
+
+
+
     // Read sample names from headers.
     // Keep one header throughout the program.
     std::cout << "Reading SAM headers" << std::endl;
-    std::vector<std::string> sample_names(conf.f_in.size());
-    bam_hdr_t* hdr;
     for(int i = 0; i < conf.f_in.size(); ++i)
     {
+        cells[i].id = i;
         samFile* samfile = sam_open(conf.f_in[i].string().c_str(), "r");
         if (samfile == NULL) {
             std::cerr << "Fail to open file " << conf.f_in[0].string() << std::endl;
             return 1;
         }
         hdr = sam_hdr_read(samfile);
-        if (!get_SM_tag(hdr->text, sample_names[i])) {
+        if (!get_SM_tag(hdr->text, cells[i].sample_name)) {
             std::cerr << "Each BAM file has to have exactly one SM tag." << std::endl << std::endl;
             goto print_usage_and_exit;
         }
+        sam_close(samfile);
     }
 
 
 
     // Bin the genome
-    std::vector<Interval> bins; // stores all intervals
-    std::vector<int32_t> chrom_map(hdr->n_targets, -1);
+    unsigned median_binsize;
+    chrom_map = std::vector<int32_t>(hdr->n_targets, -1);
     if (vm.count("bins"))
     {
         if (!read_dynamic_bins(bins, chrom_map, conf.f_bins.string().c_str(), hdr))
             return 1;
+        TMedianAccumulator<unsigned> med_acc;
+        for (Interval const & b : bins)
+            med_acc(b.end - b.start);
+        median_binsize = boost::accumulators::median(med_acc);
     }
     else
     {
@@ -237,44 +164,94 @@ int main(int argc, char **argv)
             read_exclude_file(conf.f_excl.string(), hdr, exclude);
             sort(exclude.begin(), exclude.end(), interval_comp);
         }
-        std::cout << "Exclude " << exclude.size() << " regions" << std::endl;
+        std::cout << "Excluding " << exclude.size() << " regions" << std::endl;
         create_fixed_bins(bins, chrom_map, conf.window, exclude, hdr);
+        median_binsize = conf.window;
     }
-
-    // add extra element for easier calculation of number of bins in last chromosome
+    // add last element for easy calculation of number of bins
     chrom_map.push_back((int32_t)bins.size());
 
 
-
-    // Count in bins: sorted pos
-    std::vector<TGenomeCounts> counts;
-    counts.resize(conf.f_in.size());
+    // Count in bins
     for(int i = 0; i < counts.size(); ++i)
     {
-        if (!count_sorted_reads(conf.f_in[i].string(), bins, chrom_map, hdr, conf.minMapQual, counts[i])) {
+        if (!count_sorted_reads(conf.f_in[i].string(), bins, chrom_map, hdr, conf.minMapQual, counts[i], cells[i])) {
             std::cerr << "Ignore sample " << conf.f_in[i].string() << std::endl;
             counts.erase(counts.begin()+i);
             --i;
         }
-
-        // todo: kick out samples if median is too low
     }
 
-    // Print counts
-    std::cout << "Writing " << conf.f_out.string() << std::endl;
-    std::ofstream out(conf.f_out.string());
-    out << "chrom\tstart\tend\tsample\tw\tc" << std::endl;
+
+    // median per sample
     for(unsigned i = 0; i < counts.size(); ++i) {
-        for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
-            out << hdr->target_name[bins[bin].chr];
-            out << "\t" << bins[bin].start << "\t" << bins[bin].end;
-            out << "\t" << conf.f_in[i].filename().string();
-            out << "\t" << counts[i][bin].watson_count;
-            out << "\t" << counts[i][bin].crick_count;
-            out << std::endl;
+        TMedianAccumulator<unsigned int> med_acc;
+        for (Counter const & count_bin : counts[i])
+            med_acc(count_bin.watson_count + count_bin.crick_count);
+        cells[i].median_bin_count = boost::accumulators::median(med_acc);
+    }
+
+
+    // Print cell information:
+    if (vm.count("info")) {
+        std::cout << "Writing sample information: " << conf.f_info.string() << std::endl;
+        std::ofstream out(conf.f_info.string());
+        if (out.is_open()) {
+            out << "# medbin:  Median total count (w+c) per bin" << std::endl;
+            out << "# total:   Total number of reads seen" << std::endl;
+            out << "# unmap:   Unmapped reads filtered out" << std::endl;
+            out << "# suppl:   Supplementary or secondary reads that were filtered out" << std::endl;
+            out << "# dupl:    Reads filtered out as PCR duplicates" << std::endl;
+            out << "# mapq:    Reads filtered out due to low mapping quality" << std::endl;
+            out << "# good:    Reads used for counting." << std::endl;
+            out << "sample\tcell\tmedbin\ttotal\tunmap\tsuppl\tdupl\tmapq\tgood" << std::endl;
+
+            // do not sort "cells" itselft, so cells == counts == conf.f_in
+            std::vector<CellInfo> cells2 = cells; // copy
+            sort(cells2.begin(), cells2.end(), [] (CellInfo const & a, CellInfo const & b) {if (a.sample_name==b.sample_name) { return a.id < b.id;} else {return a.sample_name < b.sample_name;} } );
+
+            for (CellInfo const & cell : cells2) {
+                out << cell.sample_name << "\t";
+                out << conf.f_in[cell.id].stem().string() << "\t";
+                out << cell.median_bin_count << "\t";
+                out << cell.n_total << "\t";
+                out << cell.n_supplementary << "\t";
+                out << cell.n_pcr_dups << "\t";
+                out << cell.n_low_mapq << "\t";
+                out << cell.n_counted << std::endl;
+            }
+        } else {
+            std::cerr << "Cannot write to " << conf.f_info.string() << std::endl;
         }
     }
-    out.close();
+
+
+    // Just print the counts and exit
+    if (true) {
+        std::cout << "Writing " << conf.f_out.string() << std::endl;
+        std::ofstream out(conf.f_out.string());
+        if (out.is_open()) {
+            out << "chrom\tstart\tend\tsample\tcell\tw\tc" << std::endl;
+            for(unsigned i = 0; i < counts.size(); ++i) {
+                for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
+                    out << hdr->target_name[bins[bin].chr];
+                    out << "\t" << bins[bin].start << "\t" << bins[bin].end;
+                    out << "\t" << cells[i].sample_name;
+                    out << "\t" << conf.f_in[i].stem().string();
+                    out << "\t" << counts[i][bin].watson_count;
+                    out << "\t" << counts[i][bin].crick_count;
+                    out << std::endl;
+                }
+            }
+            out.close();
+        } else {
+            std::cerr << "Cannot open out file: " << conf.f_out.string() << std::endl;
+            return 2;
+        }
+        return 0;
+    }
+
+    // nothing here
 
     return(0);
 }
