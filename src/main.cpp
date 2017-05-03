@@ -198,13 +198,13 @@ int main(int argc, char **argv)
         std::ofstream out(conf.f_info.string());
         if (out.is_open()) {
             out << "# medbin:  Median total count (w+c) per bin" << std::endl;
-            out << "# total:   Total number of reads seen" << std::endl;
-            out << "# unmap:   Unmapped reads filtered out" << std::endl;
-            out << "# suppl:   Supplementary or secondary reads that were filtered out" << std::endl;
+            out << "# mapped:  Total number of reads seen" << std::endl;
+            out << "# suppl:   Supplementary, secondary or QC-failed reads (filtered out)" << std::endl;
             out << "# dupl:    Reads filtered out as PCR duplicates" << std::endl;
             out << "# mapq:    Reads filtered out due to low mapping quality" << std::endl;
+            out << "# read2:   Reads filtered out as 2nd read of pair" << std::endl;
             out << "# good:    Reads used for counting." << std::endl;
-            out << "sample\tcell\tmedbin\ttotal\tunmap\tsuppl\tdupl\tmapq\tgood" << std::endl;
+            out << "sample\tcell\tmedbin\tmapped\tsuppl\tdupl\tmapq\tread2\tgood" << std::endl;
 
             // do not sort "cells" itselft, so cells == counts == conf.f_in
             std::vector<CellInfo> cells2 = cells; // copy
@@ -214,10 +214,11 @@ int main(int argc, char **argv)
                 out << cell.sample_name << "\t";
                 out << conf.f_in[cell.id].stem().string() << "\t";
                 out << cell.median_bin_count << "\t";
-                out << cell.n_total << "\t";
+                out << cell.n_mapped << "\t";
                 out << cell.n_supplementary << "\t";
                 out << cell.n_pcr_dups << "\t";
                 out << cell.n_low_mapq << "\t";
+                out << cell.n_read2s << "\t";
                 out << cell.n_counted << std::endl;
             }
         } else {

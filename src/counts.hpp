@@ -32,8 +32,8 @@ struct CellInfo {
     std::string sample_name;
     int32_t id;
     // read counts
-    unsigned n_total, n_pcr_dups, n_supplementary, n_low_mapq, n_read2s, n_counted, n_unmap;
-    CellInfo() : median_bin_count(0), id(-1), n_total(0), n_pcr_dups(0), n_supplementary(0), n_low_mapq(0), n_read2s(0), n_counted(0), n_unmap(0) {}
+    unsigned n_mapped, n_pcr_dups, n_supplementary, n_low_mapq, n_read2s, n_counted, n_unmap;
+    CellInfo() : median_bin_count(0), id(-1), n_mapped(0), n_pcr_dups(0), n_supplementary(0), n_low_mapq(0), n_read2s(0), n_counted(0), n_unmap(0) {}
 };
 
 
@@ -81,12 +81,10 @@ bool count_sorted_reads(std::string const & filename,
         bam1_t* rec = bam_init1();
         while (sam_itr_next(samfile, iter, rec) >= 0) {
 
-            // Ignore certain reads
-            ++cell.n_total;
-            if (rec->core.flag & ( BAM_FQCFAIL | BAM_FUNMAP)) {
-                ++cell.n_unmap;
+            if (rec->core.flag & BAM_FUNMAP) {
                 continue;
             }
+            ++cell.n_mapped;
 
             // expect pos to be sorted
             int32_t pos = rec->core.pos;
@@ -107,7 +105,8 @@ bool count_sorted_reads(std::string const & filename,
             // Don't read every RG tag because that might slow down BAM parsing.
             // auto x = bam_aux_get(rec, "RG");
 
-            if (rec->core.flag & (BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) {
+            // Ignore certain alignments
+            if (rec->core.flag & (BAM_FSECONDARY | BAM_FSUPPLEMENTARY | BAM_FQCFAIL)) {
                 ++cell.n_supplementary;
                 ++(counts[bin].n_supplementary);
                 continue;
