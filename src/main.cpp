@@ -33,6 +33,7 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include "hmm.hpp"
 
 
+
 struct Conf {
     std::vector<boost::filesystem::path> f_in;
     boost::filesystem::path f_out;
@@ -68,7 +69,6 @@ int main(int argc, char **argv)
     boost::program_options::options_description generic("Generic options");
     generic.add_options()
     ("help,?", "show help message")
-    ("mode,m", boost::program_options::value<std::string>(&conf.mode)->default_value("hmm"), "mode: count | hmm")
     ("mapq,q", boost::program_options::value<int>(&conf.minMapQual)->default_value(10), "min mapping quality")
     ("window,w", boost::program_options::value<unsigned int>(&conf.window)->default_value(1000000), "window size of fixed windows")
     ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt"), "output file for counts")
@@ -103,10 +103,7 @@ int main(int argc, char **argv)
         std::cerr << "Error: Exclude chromosomes (-x) have no effect when -b is specified. Stop" << std::endl << std::endl;
         goto print_usage_and_exit;
     }
-    if (conf.mode != "count" && conf.mode != "hmm") {
-        std::cerr << "Unknown mode: specify one of [count, hmm]" << std::endl << std::endl;
-        goto print_usage_and_exit;
-    }
+
     if (vm.count("help") || !vm.count("input-file"))
     {
     print_usage_and_exit:
@@ -146,16 +143,22 @@ int main(int argc, char **argv)
             std::cerr << "Each BAM file has to have exactly one SM tag." << std::endl << std::endl;
             goto print_usage_and_exit;
         }
+        sam_close(samfile);
     }
 
 
 
     // Bin the genome
+    unsigned median_binsize;
     chrom_map = std::vector<int32_t>(hdr->n_targets, -1);
     if (vm.count("bins"))
     {
         if (!read_dynamic_bins(bins, chrom_map, conf.f_bins.string().c_str(), hdr))
             return 1;
+        TMedianAccumulator<unsigned> med_acc;
+        for (Interval const & b : bins)
+            med_acc(b.end - b.start);
+        median_binsize = boost::accumulators::median(med_acc);
     }
     else
     {
@@ -166,6 +169,7 @@ int main(int argc, char **argv)
         }
         std::cout << "Excluding " << exclude.size() << " regions" << std::endl;
         create_fixed_bins(bins, chrom_map, conf.window, exclude, hdr);
+        median_binsize = conf.window;
     }
     // add last element for easy calculation of number of bins
     chrom_map.push_back((int32_t)bins.size());
@@ -182,54 +186,6 @@ int main(int argc, char **argv)
     }
 
 
-    // Print cell information:
-    if (vm.count("info")) {
-        std::cout << "Writing sample information: " << conf.f_info.string() << std::endl;
-        std::ofstream out(conf.f_info.string());
-        if (out.is_open()) {
-            out << "sample\tcell\ttotal_reads\tduplicates\tsecondary_reads" << std::endl;
-            // do not sort, so cells == counts == conf.f_in
-            std::vector<CellInfo> cells2 = cells; // copy
-            sort(cells2.begin(), cells2.end(), [] (CellInfo const & a, CellInfo const & b) {if (a.sample_name==b.sample_name) { return a.id < b.id;} else {return a.sample_name < b.sample_name;} } );
-            for (CellInfo const & cell : cells2) {
-                out << cell.sample_name << "\t";
-                out << conf.f_in[cell.id].stem().string() << "\t";
-                out << cell.total << "\t";
-                out << cell.pcr_dups << "\t";
-                out << cell.secondary << std::endl;
-            }
-        } else {
-            std::cerr << "Cannot write to " << conf.f_info.string() << std::endl;
-        }
-    }
-
-
-    // Just print the counts and exit
-    if (conf.mode == "count") {
-        std::cout << "Writing " << conf.f_out.string() << std::endl;
-        std::ofstream out(conf.f_out.string());
-        if (out.is_open()) {
-            out << "chrom\tstart\tend\tsample\tcell\tw\tc" << std::endl;
-            for(unsigned i = 0; i < counts.size(); ++i) {
-                for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
-                    out << hdr->target_name[bins[bin].chr];
-                    out << "\t" << bins[bin].start << "\t" << bins[bin].end;
-                    out << "\t" << cells[i].sample_name;
-                    out << "\t" << conf.f_in[i].stem().string();
-                    out << "\t" << counts[i][bin].watson_count;
-                    out << "\t" << counts[i][bin].crick_count;
-                    out << std::endl;
-                }
-            }
-            out.close();
-        } else {
-            std::cerr << "Cannot open out file: " << conf.f_out.string() << std::endl;
-            return 2;
-        }
-        return 0;
-    }
-    
-
     // median per sample
     for(unsigned i = 0; i < counts.size(); ++i) {
         TMedianAccumulator<unsigned int> med_acc;
@@ -239,6 +195,50 @@ int main(int argc, char **argv)
     }
 
 
+    // Print cell information:
+    if (vm.count("info")) {
+        std::cout << "Writing sample information: " << conf.f_info.string() << std::endl;
+        std::ofstream out(conf.f_info.string());
+        if (out.is_open()) {
+            out << "# medbin:  Median total count (w+c) per bin" << std::endl;
+            out << "# mapped:  Total number of reads seen" << std::endl;
+            out << "# suppl:   Supplementary, secondary or QC-failed reads (filtered out)" << std::endl;
+            out << "# dupl:    Reads filtered out as PCR duplicates" << std::endl;
+            out << "# mapq:    Reads filtered out due to low mapping quality" << std::endl;
+            out << "# read2:   Reads filtered out as 2nd read of pair" << std::endl;
+            out << "# good:    Reads used for counting." << std::endl;
+            out << "sample\tcell\tmedbin\tmapped\tsuppl\tdupl\tmapq\tread2\tgood" << std::endl;
+
+            // do not sort "cells" itselft, so cells == counts == conf.f_in
+            std::vector<CellInfo> cells2 = cells; // copy
+            sort(cells2.begin(), cells2.end(), [] (CellInfo const & a, CellInfo const & b) {if (a.sample_name==b.sample_name) { return a.id < b.id;} else {return a.sample_name < b.sample_name;} } );
+
+            for (CellInfo const & cell : cells2) {
+                out << cell.sample_name << "\t";
+                out << conf.f_in[cell.id].stem().string() << "\t";
+                out << cell.median_bin_count << "\t";
+                out << cell.n_mapped << "\t";
+                out << cell.n_supplementary << "\t";
+                out << cell.n_pcr_dups << "\t";
+                out << cell.n_low_mapq << "\t";
+                out << cell.n_read2s << "\t";
+                out << cell.n_counted << std::endl;
+            }
+        } else {
+            std::cerr << "Cannot write to " << conf.f_info.string() << std::endl;
+        }
+    }
+
+
+    // Estimating p parameter for negative binomial distribution
+
+    // median per cell
+    for(unsigned i = 0; i < counts.size(); ++i) {
+        TMedianAccumulator<unsigned int> med_acc;
+        for (Counter const & count_bin : counts[i])
+            med_acc(count_bin.watson_count + count_bin.crick_count);
+        cells[i].median_bin_count = boost::accumulators::median(med_acc);
+    }
 
 
 
@@ -317,11 +317,9 @@ int main(int argc, char **argv)
 
 
 
-    // print normalized counts
-    if (conf.mode == "hmm")
-    {
-        std::cout << "Writing file " << conf.f_out.string() << std::endl;
-        std::ofstream out(conf.f_out.string());
+    std::cout << "Writing file " << conf.f_out.string() << std::endl;
+    std::ofstream out(conf.f_out.string());
+    if (out.is_open()) {
         out << "chrom\tstart\tend\tsample\tcell\tc\tw\tclass" << std::endl;
         for(unsigned i = 0; i < counts.size(); ++i) {
             for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
@@ -337,11 +335,10 @@ int main(int argc, char **argv)
             }
         }
         out.close();
-        return(0);
-    } 
-
-
-    // nothing here
-
+    } else {
+        std::cerr << "Cannot open out file: " << conf.f_out.string() << std::endl;
+        return 2;
+    }
     return(0);
+
 }

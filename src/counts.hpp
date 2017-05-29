@@ -8,9 +8,9 @@ struct Counter {
     static const std::map<std::string, uint8_t> label_id;
     unsigned int watson_count, crick_count;
     std::string label;
-    unsigned secondary_count;
+    unsigned n_supplementary;
 
-    Counter() : watson_count(0), crick_count(0), label("NA"), secondary_count(0)
+    Counter() : watson_count(0), crick_count(0), label("NA"), n_supplementary(0)
     {}
 
     bool set_label(std::string const & s) {
@@ -32,8 +32,8 @@ struct CellInfo {
     std::string sample_name;
     int32_t id;
     // read counts
-    unsigned total, pcr_dups, secondary, read2s, low_mapq;
-    CellInfo() : median_bin_count(0), id(-1), total(0), pcr_dups(0), secondary(0), read2s(0), low_mapq(0) {}
+    unsigned n_mapped, n_pcr_dups, n_supplementary, n_low_mapq, n_read2s, n_counted, n_unmap;
+    CellInfo() : median_bin_count(0), id(-1), n_mapped(0), n_pcr_dups(0), n_supplementary(0), n_low_mapq(0), n_read2s(0), n_counted(0), n_unmap(0) {}
 };
 
 
@@ -81,14 +81,10 @@ bool count_sorted_reads(std::string const & filename,
         bam1_t* rec = bam_init1();
         while (sam_itr_next(samfile, iter, rec) >= 0) {
 
-            // Ignore certain reads
-            cell.total++;
-            if (rec->core.flag & (BAM_FSUPPLEMENTARY | BAM_FQCFAIL | BAM_FUNMAP)) {
-                continue;
-            } if (rec->core.flag & BAM_FDUP) {
-                ++(cell.pcr_dups);
+            if (rec->core.flag & BAM_FUNMAP) {
                 continue;
             }
+            ++cell.n_mapped;
 
             // expect pos to be sorted
             int32_t pos = rec->core.pos;
@@ -109,18 +105,22 @@ bool count_sorted_reads(std::string const & filename,
             // Don't read every RG tag because that might slow down BAM parsing.
             // auto x = bam_aux_get(rec, "RG");
 
-            if (rec->core.flag & BAM_FSECONDARY) {
-                ++(cell.secondary);
-                ++(counts[bin].secondary_count);
+            // Ignore certain alignments
+            if (rec->core.flag & (BAM_FSECONDARY | BAM_FSUPPLEMENTARY | BAM_FQCFAIL)) {
+                ++cell.n_supplementary;
+                ++(counts[bin].n_supplementary);
+                continue;
+            } if (rec->core.flag & BAM_FDUP) {
+                ++cell.n_pcr_dups;
                 continue;
             } if ((rec->core.qual < min_map_qual) || (rec->core.tid<0)) {
-                ++(cell.low_mapq);
+                ++cell.n_low_mapq;
                 continue;
             } if (rec->core.flag & BAM_FREAD2) {
-                ++(cell.read2s);
+                ++cell.n_read2s;
                 continue;
             }
-
+            ++cell.n_counted;
             if (rec->core.flag & BAM_FREVERSE)
                 ++( counts[bin].watson_count );
             else
