@@ -166,7 +166,7 @@ bool read_exclude_file(std::string const & filename, bam_hdr_t* hdr, std::vector
         }
         interval_file.close();
     } else {
-        std::cerr << "Error: Exclude file cannot be read: " << filename << std::endl;
+        std::cerr << "Error: BED file cannot be read: " << filename << std::endl;
         return false;
     }
     return true;

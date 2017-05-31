@@ -42,6 +42,9 @@ inline uint32_t alignmentLength(bam1_t const* rec) {
 template <typename TReturn>
 using TMedianAccumulator = boost::accumulators::accumulator_set<TReturn, boost::accumulators::stats<boost::accumulators::tag::median> >;
 
+template <typename TReturn>
+using TMeanVarAccumulator = boost::accumulators::accumulator_set<TReturn, boost::accumulators::stats<boost::accumulators::tag::mean, boost::accumulators::tag::variance> >;
+
 
 double sum(std::vector<double> const & vec)
 {

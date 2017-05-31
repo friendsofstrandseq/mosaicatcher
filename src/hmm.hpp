@@ -29,7 +29,6 @@ namespace hmm {
     {
         /** 
          *  N = number of states
-         *
          */
     public:
 
@@ -73,7 +72,7 @@ namespace hmm {
 
         void set_initials(std::vector<double> const & ini) {
             assert(ini.size() == N);
-            assert(abs(1 - sum(ini)) < INPUT_PRECISION);
+            assert(fabs(1 - sum(ini)) < INPUT_PRECISION);
             for (uint8_t i=0; i<N; ++i)
                 pi[i] = ini[i];
         }
@@ -292,7 +291,7 @@ namespace hmm {
 
 
     template <typename THMM>
-    void run_HMM(THMM & hmm, TGenomeCounts & counts, std::vector<int32_t> const & chrom_map)
+    void run_HMM(THMM & hmm, TGenomeCounts & counts, std::vector<unsigned> const & good_bins, std::vector<int32_t> const & chrom_map)
     {
         for (int32_t chrom = 0; chrom < chrom_map.size()-1; ++chrom) {
 
@@ -301,10 +300,11 @@ namespace hmm {
                 continue;
 
             // Order: crick, watson, crick, watson, ...
+            // but only use good_bins !!
             std::vector<unsigned> seq;
             for (unsigned bin = chrom_map[chrom]; bin < chrom_map[chrom+1]; ++bin) {
-                seq.push_back(counts[bin].crick_count);
-                seq.push_back(counts[bin].watson_count);
+                seq.push_back(counts[good_bins[bin]].crick_count);
+                seq.push_back(counts[good_bins[bin]].watson_count);
             }
 
             // Run viterbi
@@ -314,8 +314,8 @@ namespace hmm {
 
             // write classification into Counter
             unsigned bin_in_path = 0;
-            for (unsigned j = chrom_map[chrom]; j < chrom_map[chrom+1]; ++j)
-                counts[j].set_label(path[bin_in_path++]);
+            for (unsigned bin = chrom_map[chrom]; bin < chrom_map[chrom+1]; ++bin)
+                counts[good_bins[bin]].set_label(path[bin_in_path++]);
         }
     }
 

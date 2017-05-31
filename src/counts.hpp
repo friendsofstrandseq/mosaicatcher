@@ -10,7 +10,7 @@ struct Counter {
     std::string label;
     unsigned n_supplementary;
 
-    Counter() : watson_count(0), crick_count(0), label("NA"), n_supplementary(0)
+    Counter() : watson_count(0), crick_count(0), label("None"), n_supplementary(0)
     {}
 
     bool set_label(std::string const & s) {
@@ -18,7 +18,7 @@ struct Counter {
         return true;
     }
 
-    std::string get_label() const {
+    std::string const & get_label() const {
         return label;
     }
 };
@@ -36,7 +36,12 @@ struct CellInfo {
     CellInfo() : median_bin_count(0), id(-1), n_mapped(0), n_pcr_dups(0), n_supplementary(0), n_low_mapq(0), n_read2s(0), n_counted(0), n_unmap(0) {}
 };
 
-
+struct SampleInfo {
+    std::vector<float> means;
+    std::vector<float> vars;
+    float p;
+    SampleInfo() : p(0.33) {}
+};
 
 /**
  *  count_sorted_reads
@@ -65,7 +70,6 @@ bool count_sorted_reads(std::string const & filename,
         return false;
     }
 
-    std::cout << "Reading " << filename << std::endl;
     counts.resize(bins.size(), Counter());
 
     // access samfile chrom per chrom

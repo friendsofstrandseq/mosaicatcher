@@ -18,6 +18,8 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <unordered_map>
+#include <tuple>
 
 #include <boost/program_options/cmdline.hpp>
 #include <boost/program_options/options_description.hpp>
@@ -25,6 +27,7 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include <boost/program_options/variables_map.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/progress.hpp>
 #include <htslib/sam.h>
 
 #include "intervals.hpp"
@@ -40,6 +43,8 @@ struct Conf {
     boost::filesystem::path f_bins;
     boost::filesystem::path f_excl;
     boost::filesystem::path f_info;
+    boost::filesystem::path f_sample_info;
+    boost::filesystem::path f_removed_bins;
     int minMapQual;
     unsigned int window;
     std::string mode;
@@ -80,6 +85,8 @@ int main(int argc, char **argv)
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
     ("input-file", boost::program_options::value<std::vector<boost::filesystem::path> >(&conf.f_in), "input bam file(s)")
+    ("sample_info,S", boost::program_options::value<boost::filesystem::path>(&conf.f_sample_info),   "write info per sample")
+    ("removed_bins,R", boost::program_options::value<boost::filesystem::path>(&conf.f_removed_bins), "bins that were removed (bed file)")
     ;
 
     boost::program_options::positional_options_description pos_args;
@@ -118,34 +125,49 @@ int main(int argc, char **argv)
     }
 
 
-    // global variables
+    /////////////////////////////////////////////////////////// global variables
+    /* leave one BAM header open to get chrom names & lengths */
     bam_hdr_t* hdr = NULL;
-    std::vector<CellInfo>      cells(conf.f_in.size());
-    std::vector<Interval>      bins;
-    std::vector<int32_t>       chrom_map;
-    std::vector<TGenomeCounts> counts(conf.f_in.size());
+
+    /* regarding each cell */
+    std::vector<CellInfo>       cells(conf.f_in.size());
+    std::vector<TGenomeCounts>  counts(conf.f_in.size());
+
+    /* regarding each sample */
+    std::unordered_map<std::string, SampleInfo> samples;
+
+    /* regarding bins */
+    std::vector<Interval>       bins;
+    std::vector<int32_t>        chrom_map;
+    std::vector<unsigned>       good_bins;
+    std::vector<int32_t>        good_map;
+    ////////////////////////////////////////////////////////////////////////////
 
 
+
+    //
+    // Chapter: Binning & counting
+    // ===========================
+    //
 
     // Read sample names from headers.
     // Keep one header throughout the program.
-    std::cout << "Reading SAM headers" << std::endl;
+    std::cout << "Exploring SAM headers..." << std::endl;
     for(int i = 0; i < conf.f_in.size(); ++i)
     {
         cells[i].id = i;
         samFile* samfile = sam_open(conf.f_in[i].string().c_str(), "r");
         if (samfile == NULL) {
-            std::cerr << "Fail to open file " << conf.f_in[0].string() << std::endl;
+            std::cerr << "[Error] Fail to open file " << conf.f_in[0].string() << std::endl;
             return 1;
         }
         hdr = sam_hdr_read(samfile);
         if (!get_SM_tag(hdr->text, cells[i].sample_name)) {
-            std::cerr << "Each BAM file has to have exactly one SM tag." << std::endl << std::endl;
+            std::cerr << "[Error] Each BAM file has to have exactly one SM tag." << std::endl << std::endl;
             goto print_usage_and_exit;
         }
         sam_close(samfile);
     }
-
 
 
     // Bin the genome
@@ -159,6 +181,7 @@ int main(int argc, char **argv)
         for (Interval const & b : bins)
             med_acc(b.end - b.start);
         median_binsize = boost::accumulators::median(med_acc);
+        std::cout << "Reading " << bins.size() << " variable-width bins with median bin size of " << round(median_binsize/1000) << "kb" << std::endl;
     }
     else
     {
@@ -167,7 +190,7 @@ int main(int argc, char **argv)
             read_exclude_file(conf.f_excl.string(), hdr, exclude);
             sort(exclude.begin(), exclude.end(), interval_comp);
         }
-        std::cout << "Excluding " << exclude.size() << " regions" << std::endl;
+        std::cout << "Creating " << round(conf.window/1000) << "kb bins with " << exclude.size() << " excluded regions" << std::endl;
         create_fixed_bins(bins, chrom_map, conf.window, exclude, hdr);
         median_binsize = conf.window;
     }
@@ -175,18 +198,22 @@ int main(int argc, char **argv)
     chrom_map.push_back((int32_t)bins.size());
 
 
-    // Count in bins
-    for(int i = 0; i < counts.size(); ++i)
+    // Count in bins. If A bam file cannot be read, the cell is ignored and
+    //     the respective entry in `counts` and `cells` will be erased.
+    std::cout << "Reading " << conf.f_in.size() <<  " BAM files...";
+    boost::progress_display show_progress1(conf.f_in.size());
+    for(unsigned i = 0, i_f = 0; i_f < conf.f_in.size(); ++i, ++i_f)
     {
-        if (!count_sorted_reads(conf.f_in[i].string(), bins, chrom_map, hdr, conf.minMapQual, counts[i], cells[i])) {
-            std::cerr << "Ignore sample " << conf.f_in[i].string() << std::endl;
+        if (!count_sorted_reads(conf.f_in[i_f].string(), bins, chrom_map, hdr, conf.minMapQual, counts[i], cells[i])) {
+            std::cerr << "[Warning] Ignoring cell " << conf.f_in[i_f].string() << std::endl;
             counts.erase(counts.begin()+i);
+            cells.erase(cells.begin()+i);
             --i;
         }
+        ++show_progress1;
     }
 
-
-    // median per sample
+    // median count per sample
     for(unsigned i = 0; i < counts.size(); ++i) {
         TMedianAccumulator<unsigned int> med_acc;
         for (Counter const & count_bin : counts[i])
@@ -197,7 +224,7 @@ int main(int argc, char **argv)
 
     // Print cell information:
     if (vm.count("info")) {
-        std::cout << "Writing sample information: " << conf.f_info.string() << std::endl;
+        std::cout << "[Write] Cell summary: " << conf.f_info.string() << std::endl;
         std::ofstream out(conf.f_info.string());
         if (out.is_open()) {
             out << "# medbin:  Median total count (w+c) per bin" << std::endl;
@@ -230,94 +257,165 @@ int main(int argc, char **argv)
     }
 
 
-    // Estimating p parameter for negative binomial distribution
 
-    // median per cell
-    for(unsigned i = 0; i < counts.size(); ++i) {
-        TMedianAccumulator<unsigned int> med_acc;
-        for (Counter const & count_bin : counts[i])
-            med_acc(count_bin.watson_count + count_bin.crick_count);
-        cells[i].median_bin_count = boost::accumulators::median(med_acc);
+
+    //
+    // Chapter: Remove bad bins & estimate BN parameter p
+    // ==================================================
+    //
+    {
+        // Median-Normalized counts
+        std::vector<std::vector<std::tuple<float,float>>> norm_counts(counts.size(), std::vector<std::tuple<float,float>>(bins.size()));
+        for(unsigned i = 0; i < counts.size(); ++i)
+            for (unsigned bin = 0; bin < bins.size(); ++bin)
+                norm_counts[i][bin] = std::make_tuple(counts[i][bin].watson_count/(float)cells[i].median_bin_count,
+                                                      counts[i][bin].crick_count/(float)cells[i].median_bin_count);
+
+        // mean + variance per bin
+        std::vector<float> bin_means(bins.size());
+        std::vector<float> bin_variances(bins.size());
+        for (unsigned bin = 0; bin < bins.size(); ++bin) {
+            TMeanVarAccumulator<float> meanvar_acc;
+            for (unsigned i = 0; i < counts.size(); ++i)
+                meanvar_acc(std::get<0>(norm_counts[i][bin]) + std::get<1>(norm_counts[i][bin]));
+            bin_means[bin]     = boost::accumulators::mean(meanvar_acc);
+            bin_variances[bin] = boost::accumulators::variance(meanvar_acc);
+        }
+
+        // finding good bins
+        TMeanVarAccumulator<float> meanvar_acc;
+        std::vector<char> bad_bins;
+        for (unsigned bin = 0; bin < bins.size(); ++bin)
+            meanvar_acc(bin_means[bin]);
+        float my_mean = boost::accumulators::mean(meanvar_acc);
+        float my_sd   = std::sqrt(boost::accumulators::variance(meanvar_acc));
+        std::cout << "Mean mean bin count is " << my_mean << std::endl;
+        std::cout << "mean bin count SD is "   << my_sd << std::endl;
+        for (unsigned bin = 0; bin < bins.size(); ++bin)
+            if (bin_means[bin] > 0.01 && bin_means[bin] < my_mean + 3*my_sd)
+                good_bins.push_back(bin);
+            else
+                bad_bins.push_back(bin_means[bin] <= 0.01 ? 'l' : 'h');
+        std::cout << "Filtering " << bins.size() - good_bins.size() << " bins." << std::endl;
+
+
+        // Write removed bins to bed file
+        if (vm.count("removed_bins")) {
+            std::cout << "[Write] removed bins: " << conf.f_removed_bins.string() << std::endl;
+            std::ofstream out(conf.f_removed_bins.string());
+            if (out.is_open()) {
+                auto goodit = good_bins.begin();
+                auto badit  = bad_bins.begin();
+                for (unsigned bin = 0; bin < bins.size(); ++bin) {
+                    if(goodit == good_bins.end() || bin < *goodit) {
+                        out << hdr->target_name[bins[bin].chr] << "\t" << bins[bin].start << "\t" << bins[bin].end << "\t" << *badit++ << std::endl;
+                    } else {
+                        if (goodit != good_bins.end()) goodit++;
+                    }
+                }
+                assert(badit == bad_bins.end());
+            } else {
+                std::cerr << "Cannot write to " << conf.f_removed_bins.string() << std::endl;
+            }
+        }
+
+
+        // build chrom_map for good bins
+        good_map = std::vector<int32_t>(hdr->n_targets, -1);
+        int32_t pos = 0;
+        for (int32_t chr = 0; chr < hdr->n_targets; ++chr) {
+            while (pos < good_bins.size() && bins[good_bins[pos]].chr < chr)
+                ++pos;
+            // now goodit is either at first occurence of chr, or at the end.
+            if (pos >= good_bins.size()) good_map[chr] = (int32_t)good_bins.size();
+            else good_map[chr] = pos;
+        }
+        // add last element for easy calculation of number of bins
+        good_map.push_back((int32_t)good_bins.size());
+
+
+        // calculate cell means and cell variances, grouped by sample (not cell)
+        for (unsigned i = 0; i < counts.size(); ++i) {
+
+            // Get mean and var for this cell, but only from good bins!
+            TMeanVarAccumulator<float> acc;
+            for (unsigned bini = 0; bini < good_bins.size(); ++bini) {
+                acc(counts[i][good_bins[bini]].crick_count + counts[i][good_bins[bini]].watson_count);
+            }
+            // emplace finds key if existing and returns (it,false);
+            // otherwise it inserts (key,value) and returns (it,true).
+            auto it = samples.begin();
+            std::tie(it, std::ignore) = samples.emplace(cells[i].sample_name, SampleInfo());
+            (it->second).means.push_back(boost::accumulators::mean(acc));
+            (it->second).vars.push_back(boost::accumulators::variance(acc));
+        }
+
+        // Estimation of parameter p per sample (should work even with one cell only)
+        for (auto it = samples.begin(); it != samples.end(); ++it) {
+            SampleInfo & s = it->second;
+            s.p = std::inner_product(s.means.begin(), s.means.end(), s.means.begin(), 0.0f) \
+                / std::inner_product(s.means.begin(), s.means.end(), s.vars.begin(), 0.0f);
+        }
+
+        // Write sample information to file
+        if (vm.count("sample_info")) {
+            std::cout << "[Write] sample information: " << conf.f_sample_info.string() << std::endl;
+            std::ofstream out(conf.f_sample_info.string());
+            if (out.is_open()) {
+                out << "sample\tcells\tp\tmeans\tvars" << std::endl;
+                for (auto it = samples.begin(); it != samples.end(); ++it) {
+                    SampleInfo const & s = it->second;
+                    out << it->first << "\t" << s.means.size() << "\t" << s.p << "\t" << s.means[0];
+                    for (unsigned k=1; k<s.means.size(); ++k) out << "," << s.means[k];
+                    out << "\t" << s.vars[0];
+                    for (unsigned k=1; k<s.vars.size(); ++k) out << "," << s.vars[k];
+                    out << std::endl;
+                }
+            } else {
+                std::cerr << "Cannot write to " << conf.f_sample_info.string() << std::endl;
+            }
+        }
     }
 
 
 
-    // find well-behaving bins
-    // todo
-
-    // estimate p
-    // todo
-    double p = 0.1;
+    //
+    // Chapter: Run HMM
+    // ================
+    //
 
     // Set up and run HMM:
-    hmm::HMM<unsigned, hmm::MultiVariate<hmm::NegativeBinomial> > hmm({
-        "WW", "WC", "CC", "0", "W", "C", "WWW", "WWC", "WCC", "CCC", "WWWW", "WWWC", "WWCC", "WCCC", "CCCC"});
+    hmm::HMM<unsigned, hmm::MultiVariate<hmm::NegativeBinomial> > hmm({"CC", "WC", "WW"});
+    hmm.set_initials({0.3333, 0.3333, 0.3333});
 
+    // Estimate transition probabilities in the order of 10 SCEs per cell
+    double p_trans = 10.0f / bins.size();
+    hmm.set_transitions({1-2*p_trans, p_trans,     p_trans,   \
+                         p_trans,     1-2*p_trans, p_trans,   \
+                         p_trans,     p_trans,     1-2*p_trans});
 
-    {
-        double ini  = .03;  // Initial probability for non-diploid states
-        double chng = .001; // trans prob to jump into other, non-diploid state
-        double dipl = .030; // trans prob to jump back to any diploid state
-
-        // calculated:
-        double in2 = (1 - 12*ini)/3;
-        double st1 = 1 - 3*dipl -11*chng;
-        double st2 = 1 - 2*dipl -12*chng;
-        assert(in2 > 0);
-        assert(st1>0.8 && st1 <1);
-        assert(st2>0.8 && st2 <1);
-
-        //   WW    WC    CC   0     W     C     WWW   WWC   WCC   CCC  WWWW  WWWC  WWCC  WCCC  CCCC
-        hmm.set_initials({
-            in2,  in2,  in2,  ini,  ini,  ini,  ini,  ini,  ini,  ini,  ini,  ini,  ini,  ini,  ini});
-        hmm.set_transitions({
-            st2,  dipl, dipl, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, // WW
-            dipl, st2,  dipl, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, // WC
-            dipl, dipl, st2,  chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, // CC
-            dipl, dipl, dipl, st1,  chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, // 0
-            dipl, dipl, dipl, chng,  st1, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, // W
-            dipl, dipl, dipl, chng, chng,  st1, chng, chng, chng, chng, chng, chng, chng, chng, chng, // C
-            dipl, dipl, dipl, chng, chng, chng,  st1, chng, chng, chng, chng, chng, chng, chng, chng, // WWW
-            dipl, dipl, dipl, chng, chng, chng, chng,  st1, chng, chng, chng, chng, chng, chng, chng, // WWC
-            dipl, dipl, dipl, chng, chng, chng, chng, chng,  st1, chng, chng, chng, chng, chng, chng, // WCC
-            dipl, dipl, dipl, chng, chng, chng, chng, chng, chng,  st1, chng, chng, chng, chng, chng, // CCC
-            dipl, dipl, dipl, chng, chng, chng, chng, chng, chng, chng,  st1, chng, chng, chng, chng, // WWWW
-            dipl, dipl, dipl, chng, chng, chng, chng, chng, chng, chng, chng,  st1, chng, chng, chng, // WWWC
-            dipl, dipl, dipl, chng, chng, chng, chng, chng, chng, chng, chng, chng,  st1, chng, chng, // WWCC
-            dipl, dipl, dipl, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng,  st1, chng, // WCCC
-            dipl, dipl, dipl, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng, chng,  st1, // CCCC
-        });
-    }
 
     for (unsigned i=0; i<counts.size(); ++i)
     {
-        // set n and p parameters according to a mean of sample
+        // set NB(n,p) parameters according to `p` of sample and mean of cell.
+        double p = samples[cells[i].sample_name].p;
         double n = (double)cells[i].median_bin_count / 2 * p / (1-p);
+
+        // todo: adjust mean in zero bins !!
         double z = 0.5; // mean in zero bins
+
         hmm.set_emissions( {\
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,  z)}), // WW
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,  z)}), // CC
             hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,  n)}), // WC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,2*n)}), // CC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,  z)}), // 0
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,  z)}), // W
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,  n)}), // C
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,3*n), hmm::NegativeBinomial(p,  z)}), // WWW
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,  n)}), // WWC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,2*n)}), // WCC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,3*n)}), // CCC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,4*n), hmm::NegativeBinomial(p,  z)}), // WWWW
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,3*n), hmm::NegativeBinomial(p,  n)}), // WWWC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,2*n)}), // WWCC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,3*n)}), // WCCC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,4*n)})  // CCCC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,2*n)})  // WW
         });
-        run_HMM(hmm, counts[i], chrom_map);
+        run_HMM(hmm, counts[i], good_bins, good_map);
     }
 
 
 
 
-    std::cout << "Writing file " << conf.f_out.string() << std::endl;
+    std::cout << "[Write] count table: " << conf.f_out.string() << std::endl;
     std::ofstream out(conf.f_out.string());
     if (out.is_open()) {
         out << "chrom\tstart\tend\tsample\tcell\tc\tw\tclass" << std::endl;
@@ -336,7 +434,7 @@ int main(int argc, char **argv)
         }
         out.close();
     } else {
-        std::cerr << "Cannot open out file: " << conf.f_out.string() << std::endl;
+        std::cerr << "[Error] Cannot open file: " << conf.f_out.string() << std::endl;
         return 2;
     }
     return(0);
