@@ -23,41 +23,6 @@ namespace hmm {
     static const double MIN_EMISSION_LOG = -1e4;
     // TODO: check for p=0 or 1 in all pdfs --> take special care for log then!
 
-    /**
-     *  Gaussian
-     *  --------
-     *  simple 1-dim Gaussian
-     */
-    struct Gaussian
-    {
-        static const uint8_t dim = 1;
-        typedef double TEmission;
-        boost::math::normal gaussian;
-
-        Gaussian(double mean, double var) : gaussian(mean, var)
-        {}
-
-        inline double calc_log_emission(std::vector<double>::const_iterator iter) const
-        {
-            double pr = log(calc_emission(iter));
-            if (pr < MIN_EMISSION_LOG)
-                pr = MIN_EMISSION_LOG;
-            return pr;
-        }
-
-        double calc_emission(std::vector<double>::const_iterator iter) const
-        {
-            return pdf(gaussian, *iter);
-        }
-    };
-
-    std::ostream& operator<<(std::ostream& os, const Gaussian& obj)
-    {
-        os << "Normal Distribution:" << std::endl;
-        os << "      mean = " << mean(obj.gaussian) << std::endl;
-        os << "      var = " << variance(obj.gaussian) << std::endl;
-        return os;
-    }
 
     /**
      *  NegativeBinomial
