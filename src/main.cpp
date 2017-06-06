@@ -132,6 +132,7 @@ int main(int argc, char **argv)
     /* regarding each cell */
     std::vector<CellInfo>       cells(conf.f_in.size());
     std::vector<TGenomeCounts>  counts(conf.f_in.size());
+    std::vector<unsigned>       good_cells;
 
     /* regarding each sample */
     std::unordered_map<std::string, SampleInfo> samples;
@@ -222,67 +223,49 @@ int main(int argc, char **argv)
     }
 
 
-    // Print cell information:
-    if (vm.count("info")) {
-        std::cout << "[Write] Cell summary: " << conf.f_info.string() << std::endl;
-        std::ofstream out(conf.f_info.string());
-        if (out.is_open()) {
-            out << "# medbin:  Median total count (w+c) per bin" << std::endl;
-            out << "# mapped:  Total number of reads seen" << std::endl;
-            out << "# suppl:   Supplementary, secondary or QC-failed reads (filtered out)" << std::endl;
-            out << "# dupl:    Reads filtered out as PCR duplicates" << std::endl;
-            out << "# mapq:    Reads filtered out due to low mapping quality" << std::endl;
-            out << "# read2:   Reads filtered out as 2nd read of pair" << std::endl;
-            out << "# good:    Reads used for counting." << std::endl;
-            out << "sample\tcell\tmedbin\tmapped\tsuppl\tdupl\tmapq\tread2\tgood" << std::endl;
-
-            // do not sort "cells" itselft, so cells == counts == conf.f_in
-            std::vector<CellInfo> cells2 = cells; // copy
-            sort(cells2.begin(), cells2.end(), [] (CellInfo const & a, CellInfo const & b) {if (a.sample_name==b.sample_name) { return a.id < b.id;} else {return a.sample_name < b.sample_name;} } );
-
-            for (CellInfo const & cell : cells2) {
-                out << cell.sample_name << "\t";
-                out << conf.f_in[cell.id].stem().string() << "\t";
-                out << cell.median_bin_count << "\t";
-                out << cell.n_mapped << "\t";
-                out << cell.n_supplementary << "\t";
-                out << cell.n_pcr_dups << "\t";
-                out << cell.n_low_mapq << "\t";
-                out << cell.n_read2s << "\t";
-                out << cell.n_counted << std::endl;
-            }
-        } else {
-            std::cerr << "Cannot write to " << conf.f_info.string() << std::endl;
+    //
+    // Chapter: Select cells with enough coverage
+    // ==========================================
+    //
+    for (unsigned i=0; i<counts.size(); ++i) {
+        if (cells[i].median_bin_count >= 3)
+            good_cells.push_back(i);
+        else {
+            cells[i].pass_qc = false;
+            for (unsigned bin=0; bin < bins.size(); ++bin)
+                counts[i][bin].set_label("None");
         }
     }
 
 
 
-
     //
-    // Chapter: Remove bad bins & estimate BN parameter p
+    // Chapter: Remove bad bins & estimate NB parameter p
     // ==================================================
     //
     {
         // Median-Normalized counts
-        std::vector<std::vector<std::tuple<float,float>>> norm_counts(counts.size(), std::vector<std::tuple<float,float>>(bins.size()));
-        for(unsigned i = 0; i < counts.size(); ++i)
+        std::vector<std::vector<std::tuple<float,float>>> norm_counts(counts.size());
+        for(auto i = good_cells.begin(); i != good_cells.end(); ++i) {
+            norm_counts[*i] = std::vector<std::tuple<float,float>>(bins.size());
             for (unsigned bin = 0; bin < bins.size(); ++bin)
-                norm_counts[i][bin] = std::make_tuple(counts[i][bin].watson_count/(float)cells[i].median_bin_count,
-                                                      counts[i][bin].crick_count/(float)cells[i].median_bin_count);
+                norm_counts[*i][bin] = std::make_tuple(counts[*i][bin].watson_count/(float)cells[*i].median_bin_count,
+                                                       counts[*i][bin].crick_count /(float)cells[*i].median_bin_count);
+        }
 
         // mean + variance per bin
         std::vector<float> bin_means(bins.size());
         std::vector<float> bin_variances(bins.size());
         for (unsigned bin = 0; bin < bins.size(); ++bin) {
             TMeanVarAccumulator<float> meanvar_acc;
-            for (unsigned i = 0; i < counts.size(); ++i)
-                meanvar_acc(std::get<0>(norm_counts[i][bin]) + std::get<1>(norm_counts[i][bin]));
+            for(auto i = good_cells.begin(); i != good_cells.end(); ++i)
+                meanvar_acc(std::get<0>(norm_counts[*i][bin]) + std::get<1>(norm_counts[*i][bin]));
             bin_means[bin]     = boost::accumulators::mean(meanvar_acc);
             bin_variances[bin] = boost::accumulators::variance(meanvar_acc);
         }
 
         // finding good bins
+        // to do: this could be extended by checking if bin is always in WC state!
         TMeanVarAccumulator<float> meanvar_acc;
         std::vector<char> bad_bins;
         for (unsigned bin = 0; bin < bins.size(); ++bin)
@@ -335,18 +318,20 @@ int main(int argc, char **argv)
 
 
         // calculate cell means and cell variances, grouped by sample (not cell)
-        for (unsigned i = 0; i < counts.size(); ++i) {
+        for(auto i = good_cells.begin(); i != good_cells.end(); ++i) {
 
             // Get mean and var for this cell, but only from good bins!
             TMeanVarAccumulator<float> acc;
             for (unsigned bini = 0; bini < good_bins.size(); ++bini) {
-                acc(counts[i][good_bins[bini]].crick_count + counts[i][good_bins[bini]].watson_count);
+                acc(counts[*i][good_bins[bini]].crick_count + counts[*i][good_bins[bini]].watson_count);
             }
             // emplace finds key if existing and returns (it,false);
             // otherwise it inserts (key,value) and returns (it,true).
             auto it = samples.begin();
-            std::tie(it, std::ignore) = samples.emplace(cells[i].sample_name, SampleInfo());
-            (it->second).means.push_back(boost::accumulators::mean(acc));
+            std::tie(it, std::ignore) = samples.emplace(cells[*i].sample_name, SampleInfo());
+            float cell_mean = boost::accumulators::mean(acc);
+            cells[*i].mean_bin_count = cell_mean;
+            (it->second).means.push_back(cell_mean);
             (it->second).vars.push_back(boost::accumulators::variance(acc));
         }
 
@@ -395,26 +380,77 @@ int main(int argc, char **argv)
                          p_trans,     p_trans,     1-2*p_trans});
 
 
-    for (unsigned i=0; i<counts.size(); ++i)
+    for(auto i = good_cells.begin(); i != good_cells.end(); ++i)
     {
         // set NB(n,p) parameters according to `p` of sample and mean of cell.
-        double p = samples[cells[i].sample_name].p;
-        double n = (double)cells[i].median_bin_count / 2 * p / (1-p);
+        float p = samples[cells[*i].sample_name].p;
+        float n = (float)cells[*i].mean_bin_count / 2 * p / (1-p);
+        float z = 0.15*n; // mean in zero bins
+        cells[*i].nb_p = p;
+        cells[*i].nb_n = n;
+        cells[*i].nb_z = z;
 
-        // todo: adjust mean in zero bins !!
-        double z = 0.5; // mean in zero bins
+        if (cells[*i].mean_bin_count < 3)
+            std::cerr << "[Warning] Mean bin count is < 3. Try increasing bin size" << std::endl;
+        std::cout << "NB parameters for cell " << conf.f_in[cells[*i].id].stem().string().substr(0,15) << ": p=" << p << "\tn=" << n << "\tz=" << z << std::endl;
 
         hmm.set_emissions( {\
             hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,  z)}), // CC
             hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,  n)}), // WC
             hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,2*n)})  // WW
         });
-        run_HMM(hmm, counts[i], good_bins, good_map);
+        run_HMM(hmm, counts[*i], good_bins, good_map);
     }
 
 
 
 
+
+    // Print cell information:
+    if (vm.count("info")) {
+        std::cout << "[Write] Cell summary: " << conf.f_info.string() << std::endl;
+        std::ofstream out(conf.f_info.string());
+        if (out.is_open()) {
+            out << "# sample:  Sample (has multiple cells)" << std::endl;
+            out << "# cell:    Name of the cell." << std::endl;
+            out << "# mapped:  Total number of reads seen" << std::endl;
+            out << "# suppl:   Supplementary, secondary or QC-failed reads (filtered out)" << std::endl;
+            out << "# dupl:    Reads filtered out as PCR duplicates" << std::endl;
+            out << "# mapq:    Reads filtered out due to low mapping quality" << std::endl;
+            out << "# read2:   Reads filtered out as 2nd read of pair" << std::endl;
+            out << "# good:    Reads used for counting." << std::endl;
+            out << "# pass1:   Enough coverage? If false, ignore all columns from now" << std::endl;
+            out << "# nb_p:    Negative Binomial parameter p. Constant for one sample." << std::endl;
+            out << "# nb_n:    Negative Binomial parameter n. We use NB(p,n)*NB(p,n) in WC states, but NB(p,2*n)*NB(p,z) in WW or CC states." << std::endl;
+            out << "# nb_z:    Negative Binomial parameter z used for zero expectation (see above)." << std::endl;
+            out << "sample\tcell\tmedbin\tmapped\tsuppl\tdupl\tmapq\tread2\tgood\tpass1\tnb_p\tnb_n\tnb_z" << std::endl;
+
+            // do not sort "cells" itselft, so cells == counts == conf.f_in
+            std::vector<CellInfo> cells2 = cells; // copy
+            sort(cells2.begin(), cells2.end(), [] (CellInfo const & a, CellInfo const & b) {if (a.sample_name==b.sample_name) { return a.id < b.id;} else {return a.sample_name < b.sample_name;} } );
+
+            for (CellInfo const & cell : cells2) {
+                out << cell.sample_name << "\t";
+                out << conf.f_in[cell.id].stem().string() << "\t";
+                out << cell.median_bin_count << "\t";
+                out << cell.n_mapped << "\t";
+                out << cell.n_supplementary << "\t";
+                out << cell.n_pcr_dups << "\t";
+                out << cell.n_low_mapq << "\t";
+                out << cell.n_read2s << "\t";
+                out << cell.n_counted << "\t";
+                out << cell.pass_qc << "\t";
+                out << cell.nb_p << "\t";
+                out << cell.nb_n << "\t";
+                out << cell.nb_z << std::endl;
+            }
+        } else {
+            std::cerr << "Cannot write to " << conf.f_info.string() << std::endl;
+        }
+    }
+
+
+    // Write final counts + classification
     std::cout << "[Write] count table: " << conf.f_out.string() << std::endl;
     std::ofstream out(conf.f_out.string());
     if (out.is_open()) {
@@ -437,6 +473,9 @@ int main(int argc, char **argv)
         std::cerr << "[Error] Cannot open file: " << conf.f_out.string() << std::endl;
         return 2;
     }
+
+
+
     return(0);
 
 }
