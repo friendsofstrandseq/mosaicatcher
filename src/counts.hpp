@@ -27,22 +27,6 @@ struct Counter {
 typedef std::vector<Counter> TGenomeCounts;
 
 
-struct CellInfo {
-    unsigned median_bin_count;
-    std::string sample_name;
-    int32_t id;
-    // read counts
-    unsigned n_mapped, n_pcr_dups, n_supplementary, n_low_mapq, n_read2s, n_counted, n_unmap;
-    CellInfo() : median_bin_count(0), id(-1), n_mapped(0), n_pcr_dups(0), n_supplementary(0), n_low_mapq(0), n_read2s(0), n_counted(0), n_unmap(0) {}
-};
-
-struct SampleInfo {
-    std::vector<float> means;
-    std::vector<float> vars;
-    float p;
-    SampleInfo() : p(0.33) {}
-};
-
 /**
  *  count_sorted_reads
  *  ------------------
