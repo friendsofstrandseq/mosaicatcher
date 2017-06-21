@@ -4,8 +4,8 @@
 #include "utils.hpp"
 
 struct Counter {
-    static const std::vector<std::string> label_names;
-    static const std::map<std::string, uint8_t> label_id;
+    //static const std::vector<std::string> label_names;
+    //static const std::map<std::string, uint8_t> label_id;
     unsigned int watson_count, crick_count;
     std::string label;
     unsigned n_supplementary;
