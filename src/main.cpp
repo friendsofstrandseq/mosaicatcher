@@ -45,6 +45,7 @@ struct Conf {
     boost::filesystem::path f_info;
     boost::filesystem::path f_sample_info;
     boost::filesystem::path f_removed_bins;
+    boost::filesystem::path f_segments;
     int minMapQual;
     unsigned int window;
     std::string mode;
@@ -87,6 +88,7 @@ int main(int argc, char **argv)
     ("input-file", boost::program_options::value<std::vector<boost::filesystem::path> >(&conf.f_in), "input bam file(s)")
     ("sample_info,S", boost::program_options::value<boost::filesystem::path>(&conf.f_sample_info),   "write info per sample")
     ("removed_bins,R", boost::program_options::value<boost::filesystem::path>(&conf.f_removed_bins), "bins that were removed (bed file)")
+    ("segments,E", boost::program_options::value<boost::filesystem::path>(&conf.f_segments), "write Watson/Crick classificaiton as a bed file")
     ;
 
     boost::program_options::positional_options_description pos_args;
@@ -452,29 +454,68 @@ int main(int argc, char **argv)
 
     // Write final counts + classification
     std::cout << "[Write] count table: " << conf.f_out.string() << std::endl;
-    std::ofstream out(conf.f_out.string());
-    if (out.is_open()) {
-        out << "chrom\tstart\tend\tsample\tcell\tc\tw\tclass" << std::endl;
-        for(unsigned i = 0; i < counts.size(); ++i) {
-            for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
-                Counter & cc = counts[i][bin];
-                out << hdr->target_name[bins[bin].chr];
-                out << "\t" << bins[bin].start << "\t" << bins[bin].end;
-                out << "\t" << cells[i].sample_name;
-                out << "\t" << conf.f_in[i].stem().string();
-                out << "\t" << cc.crick_count;
-                out << "\t" << cc.watson_count;
-                out << "\t" << cc.get_label();
-                out << std::endl;
+    {
+        std::ofstream out(conf.f_out.string());
+        if (out.is_open()) {
+            out << "chrom\tstart\tend\tsample\tcell\tc\tw\tclass" << std::endl;
+            for(unsigned i = 0; i < counts.size(); ++i) {
+                for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
+                    Counter & cc = counts[i][bin];
+                    out << hdr->target_name[bins[bin].chr];
+                    out << "\t" << bins[bin].start << "\t" << bins[bin].end;
+                    out << "\t" << cells[i].sample_name;
+                    out << "\t" << conf.f_in[i].stem().string();
+                    out << "\t" << cc.crick_count;
+                    out << "\t" << cc.watson_count;
+                    out << "\t" << cc.get_label();
+                    out << std::endl;
+                }
             }
+            out.close();
+        } else {
+            std::cerr << "[Error] Cannot open file: " << conf.f_out.string() << std::endl;
+            return 2;
         }
-        out.close();
-    } else {
-        std::cerr << "[Error] Cannot open file: " << conf.f_out.string() << std::endl;
-        return 2;
     }
 
+    // define segments from HMM
+    if(vm.count("segments")) {
+        std::cout << "[Write] segment bed file: " << conf.f_segments.string() << std::endl;
+        std::ofstream out(conf.f_segments.string());
+        if (out.is_open()) {
 
+            std::vector<std::vector<Interval> > interesting_intervals;
+            for(auto i = good_cells.begin(); i != good_cells.end(); ++i)
+            {
+                // Group consecutive elements into Intervals
+                typedef std::pair<Interval, std::string> Labelled_interval;
+                std::vector<Labelled_interval> intvls;
+                for (auto bin = good_bins.begin(); bin != good_bins.end(); ++bin)
+                {
+                    Counter const  & cc =    counts[*i][*bin];
+                    Interval const & intvl = bins[*bin];
+
+                    // new interval starts --> add Interval to vector
+                    if (intvls.empty() || !(intvls.back().first.chr == intvl.chr && intvls.back().second == cc.label)) {
+                        intvls.push_back(Labelled_interval(intvl, cc.label));
+
+                    // old interval continues --> expand last Interval
+                    } else {
+                        intvls.back().first.end = intvl.end;
+                    }
+                }
+                for (auto x : intvls) {
+                    out << hdr->target_name[x.first.chr] << "\t";
+                    out << x.first.start << "\t" << x.first.end << "\t";
+                    out << x.second << "\t";
+                    out << conf.f_in[*i].stem().string() << std::endl;
+                }
+            }
+        } else {
+            std::cerr << "[Error] Cannot open file" << std::endl;
+            return 2;
+        }
+    }
 
     return(0);
 
