@@ -24,7 +24,7 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include <boost/accumulators/statistics/stats.hpp>
 #include <boost/accumulators/statistics/mean.hpp>
 #include <boost/algorithm/string.hpp>
-
+#include <htslib/sam.h>
 
 
 

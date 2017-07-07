@@ -1,7 +1,10 @@
 #ifndef counts_hpp
 #define counts_hpp
 
+#include <htslib/sam.h>
+
 #include "utils.hpp"
+#include "intervals.hpp"
 
 struct Counter {
     //static const std::vector<std::string> label_names;

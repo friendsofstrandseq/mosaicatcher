@@ -12,6 +12,9 @@ struct Interval {
     int32_t end;
     Interval() : chr(0), start(0), end(0) {}
     Interval(int32_t tid, int32_t s, int32_t e): chr(tid), start(s), end(e) {}
+    bool operator<(Interval const & other) const {
+        return chr == other.chr ? start < other.start : chr < other.chr;
+    }
 };
 
 auto interval_comp = [] (Interval const & a, Interval const & b) {
