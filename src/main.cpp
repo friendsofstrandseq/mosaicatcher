@@ -28,12 +28,19 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include <boost/tokenizer.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
+#include <boost/iostreams/stream.hpp>
+#include <boost/iostreams/stream_buffer.hpp>
+#include <boost/iostreams/device/file.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/zlib.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
 #include <htslib/sam.h>
 
 #include "intervals.hpp"
 #include "counts.hpp"
 #include "distribution.hpp"
 #include "hmm.hpp"
+#include "iocounts.hpp"
 
 
 
@@ -67,6 +74,10 @@ std::vector<unsigned> median_by_sample(std::vector<TGenomeCounts> & counts)
 
 
 
+
+
+
+
 int main(int argc, char **argv)
 {
 
@@ -77,7 +88,7 @@ int main(int argc, char **argv)
     ("help,?", "show help message")
     ("mapq,q", boost::program_options::value<int>(&conf.minMapQual)->default_value(10), "min mapping quality")
     ("window,w", boost::program_options::value<unsigned int>(&conf.window)->default_value(1000000), "window size of fixed windows")
-    ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt"), "output file for counts")
+    ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt.gz"), "output file for counts and strand state (gz)")
     ("bins,b", boost::program_options::value<boost::filesystem::path>(&conf.f_bins), "variable bin file (BED format, mutually exclusive to -w)")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&conf.f_excl), "Exclude chromosomes (mutually exclusive to -b)")
     ("info,i", boost::program_options::value<boost::filesystem::path>(&conf.f_info), "Write info about samples")
@@ -88,7 +99,6 @@ int main(int argc, char **argv)
     ("input-file", boost::program_options::value<std::vector<boost::filesystem::path> >(&conf.f_in), "input bam file(s)")
     ("sample_info,S", boost::program_options::value<boost::filesystem::path>(&conf.f_sample_info),   "write info per sample")
     ("removed_bins,R", boost::program_options::value<boost::filesystem::path>(&conf.f_removed_bins), "bins that were removed (bed file)")
-    ("segments,E", boost::program_options::value<boost::filesystem::path>(&conf.f_segments), "write Watson/Crick classificaiton as a bed file")
     ;
 
     boost::program_options::positional_options_description pos_args;
@@ -120,8 +130,9 @@ int main(int argc, char **argv)
         std::cout << visible_options << std::endl;
         std::cout << std::endl;
         std::cout << "Notes:" << std::endl;
+        std::cout << "  * writes a table of bin counts and state classifcation as a gzip file (default: out.txt.gz)" << std::endl;
         std::cout << "  * Reads are counted by start position" << std::endl;
-        std::cout << "  * One cell per BAM file, inclusing SM tag in header" << std::endl;
+        std::cout << "  * One cell per BAM file, including SM tag in header" << std::endl;
         std::cout << "  * For paired-end data, only read 1 is counted" << std::endl;
         return 1;
     }
@@ -455,68 +466,24 @@ int main(int argc, char **argv)
     // Write final counts + classification
     std::cout << "[Write] count table: " << conf.f_out.string() << std::endl;
     {
-        std::ofstream out(conf.f_out.string());
-        if (out.is_open()) {
-            out << "chrom\tstart\tend\tsample\tcell\tc\tw\tclass" << std::endl;
-            for(unsigned i = 0; i < counts.size(); ++i) {
-                for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
-                    Counter & cc = counts[i][bin];
-                    out << hdr->target_name[bins[bin].chr];
-                    out << "\t" << bins[bin].start << "\t" << bins[bin].end;
-                    out << "\t" << cells[i].sample_name;
-                    out << "\t" << conf.f_in[i].stem().string();
-                    out << "\t" << cc.crick_count;
-                    out << "\t" << cc.watson_count;
-                    out << "\t" << cc.get_label();
-                    out << std::endl;
-                }
+        struct sample_cell_name_wrapper {
+            std::vector<boost::filesystem::path> const & f_in;
+            std::vector<CellInfo> const & cells;
+            sample_cell_name_wrapper(std::vector<boost::filesystem::path> const & f_in, std::vector<CellInfo> const & cells) :
+                f_in(f_in), cells(cells)
+            {}
+            std::pair<std::string,std::string> operator[](size_t i) const {
+                return std::make_pair(cells[i].sample_name, f_in[i].stem().string());
             }
-            out.close();
-        } else {
-            std::cerr << "[Error] Cannot open file: " << conf.f_out.string() << std::endl;
-            return 2;
-        }
+        };
+
+        if (!write_counts_gzip(conf.f_out.string(),
+                          counts,
+                          bins,
+                          hdr->target_name,
+                          sample_cell_name_wrapper(conf.f_in, cells)) )
+            return 1;
     }
 
-    // define segments from HMM
-    if(vm.count("segments")) {
-        std::cout << "[Write] segment bed file: " << conf.f_segments.string() << std::endl;
-        std::ofstream out(conf.f_segments.string());
-        if (out.is_open()) {
-
-            std::vector<std::vector<Interval> > interesting_intervals;
-            for(auto i = good_cells.begin(); i != good_cells.end(); ++i)
-            {
-                // Group consecutive elements into Intervals
-                typedef std::pair<Interval, std::string> Labelled_interval;
-                std::vector<Labelled_interval> intvls;
-                for (auto bin = good_bins.begin(); bin != good_bins.end(); ++bin)
-                {
-                    Counter const  & cc =    counts[*i][*bin];
-                    Interval const & intvl = bins[*bin];
-
-                    // new interval starts --> add Interval to vector
-                    if (intvls.empty() || !(intvls.back().first.chr == intvl.chr && intvls.back().second == cc.label)) {
-                        intvls.push_back(Labelled_interval(intvl, cc.label));
-
-                    // old interval continues --> expand last Interval
-                    } else {
-                        intvls.back().first.end = intvl.end;
-                    }
-                }
-                for (auto x : intvls) {
-                    out << hdr->target_name[x.first.chr] << "\t";
-                    out << x.first.start << "\t" << x.first.end << "\t";
-                    out << x.second << "\t";
-                    out << conf.f_in[*i].stem().string() << std::endl;
-                }
-            }
-        } else {
-            std::cerr << "[Error] Cannot open file" << std::endl;
-            return 2;
-        }
-    }
-
-    return(0);
-
+    return 0;
 }
