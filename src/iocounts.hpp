@@ -16,8 +16,16 @@
 #include "counts.hpp"       // Counter
 #include "intervals.hpp"    // Interval
 
+
+namespace io {
+
+
+
 const unsigned MAX_UNSIGNED = std::numeric_limits<unsigned int>::max();
 
+using count::TGenomeCounts;
+using count::Counter;
+using interval::Interval;
 
 /** write count table in long format to a gzip file.
   *
@@ -291,4 +299,6 @@ bool read_counts_gzip(TString const & f_in,
 }
 
 
+
+}
 #endif /* iocounts_hpp */

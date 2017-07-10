@@ -2,9 +2,15 @@
 #define counts_hpp
 
 #include <htslib/sam.h>
-
 #include "utils.hpp"
 #include "intervals.hpp"
+
+namespace count {
+
+
+
+using interval::Interval;
+
 
 struct Counter {
     //static const std::vector<std::string> label_names;
@@ -28,6 +34,23 @@ struct Counter {
 
 
 typedef std::vector<Counter> TGenomeCounts;
+
+
+/** Given count table, calculate median per cell
+  * 
+  * @param counts matrix of counts
+  */
+std::vector<unsigned> median_per_cell(std::vector<TGenomeCounts> & counts)
+{
+    std::vector<unsigned> median_per_cell(counts.size());
+    for (unsigned i = 0; i < counts.size(); ++i) {
+        TMedianAccumulator<unsigned int> med_acc;
+        for (Counter const & count_bin : counts[i])
+            med_acc(count_bin.watson_count + count_bin.crick_count);
+        median_per_cell[i] = boost::accumulators::median(med_acc);
+    }
+    return median_per_cell;
+}
 
 
 /**
@@ -66,7 +89,7 @@ bool count_sorted_reads(std::string const & filename,
         if (chrom_map[chrom+1] - chrom_map[chrom] < 1)
             continue;
 
-        unsigned bin = chrom_map[chrom];
+        int32_t bin = chrom_map[chrom];
         int32_t prev_pos = 0;
         hts_itr_t* iter = sam_itr_queryi(idx, chrom, 0, hdr->target_len[chrom]);
         bam1_t* rec = bam_init1();
@@ -80,6 +103,7 @@ bool count_sorted_reads(std::string const & filename,
             // expect pos to be sorted
             int32_t pos = rec->core.pos;
             assert(pos >= prev_pos);
+            prev_pos = pos;
 
             // skip all bins left of this position.
             // Stop when all bins of the chromosome are done
@@ -129,5 +153,5 @@ bool count_sorted_reads(std::string const & filename,
 
 
 
-
+}
 #endif /* counts_hpp */

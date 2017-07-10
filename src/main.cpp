@@ -43,6 +43,10 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include "iocounts.hpp"
 
 
+using interval::Interval;
+using count::TGenomeCounts;
+using count::Counter;
+
 
 struct Conf {
     std::vector<boost::filesystem::path> f_in;
@@ -57,22 +61,6 @@ struct Conf {
     unsigned int window;
     std::string mode;
 };
-
-std::vector<unsigned> median_by_sample(std::vector<TGenomeCounts> & counts)
-{
-    std::vector<unsigned> median_by_sample(counts.size());
-    for(unsigned i = 0; i < counts.size(); ++i) {
-        TMedianAccumulator<unsigned int> med_acc;
-        for (Counter const & count_bin : counts[i])
-            med_acc(count_bin.watson_count + count_bin.crick_count);
-        median_by_sample[i] = boost::accumulators::median(med_acc);
-    }
-    return median_by_sample;
-}
-
-
-
-
 
 
 
@@ -167,9 +155,9 @@ int main(int argc, char **argv)
     // Read sample names from headers.
     // Keep one header throughout the program.
     std::cout << "Exploring SAM headers..." << std::endl;
-    for(int i = 0; i < conf.f_in.size(); ++i)
+    for(unsigned i = 0; i < conf.f_in.size(); ++i)
     {
-        cells[i].id = i;
+        cells[i].id = (int32_t)i;
         samFile* samfile = sam_open(conf.f_in[i].string().c_str(), "r");
         if (samfile == NULL) {
             std::cerr << "[Error] Fail to open file " << conf.f_in[0].string() << std::endl;
@@ -202,7 +190,7 @@ int main(int argc, char **argv)
         std::vector<Interval> exclude;
         if (vm.count("exclude")) {
             read_exclude_file(conf.f_excl.string(), hdr, exclude);
-            sort(exclude.begin(), exclude.end(), interval_comp);
+            sort(exclude.begin(), exclude.end(), interval::less);
         }
         std::cout << "Creating " << round(conf.window/1000) << "kb bins with " << exclude.size() << " excluded regions" << std::endl;
         create_fixed_bins(bins, chrom_map, conf.window, exclude, hdr);
@@ -216,7 +204,7 @@ int main(int argc, char **argv)
     //     the respective entry in `counts` and `cells` will be erased.
     std::cout << "Reading " << conf.f_in.size() <<  " BAM files...";
     boost::progress_display show_progress1(conf.f_in.size());
-    for(unsigned i = 0, i_f = 0; i_f < conf.f_in.size(); ++i, ++i_f)
+    for (unsigned i = 0, i_f = 0; i_f < conf.f_in.size(); ++i, ++i_f)
     {
         if (!count_sorted_reads(conf.f_in[i_f].string(), bins, chrom_map, hdr, conf.minMapQual, counts[i], cells[i])) {
             std::cerr << "[Warning] Ignoring cell " << conf.f_in[i_f].string() << std::endl;
@@ -228,7 +216,7 @@ int main(int argc, char **argv)
     }
 
     // median count per sample
-    for(unsigned i = 0; i < counts.size(); ++i) {
+    for (unsigned i = 0; i < counts.size(); ++i) {
         TMedianAccumulator<unsigned int> med_acc;
         for (Counter const & count_bin : counts[i])
             med_acc(count_bin.watson_count + count_bin.crick_count);
@@ -251,7 +239,6 @@ int main(int argc, char **argv)
     }
 
 
-
     //
     // Chapter: Remove bad bins & estimate NB parameter p
     // ==================================================
@@ -259,7 +246,7 @@ int main(int argc, char **argv)
     {
         // Median-Normalized counts
         std::vector<std::vector<std::tuple<float,float>>> norm_counts(counts.size());
-        for(auto i = good_cells.begin(); i != good_cells.end(); ++i) {
+        for (auto i = good_cells.begin(); i != good_cells.end(); ++i) {
             norm_counts[*i] = std::vector<std::tuple<float,float>>(bins.size());
             for (unsigned bin = 0; bin < bins.size(); ++bin)
                 norm_counts[*i][bin] = std::make_tuple(counts[*i][bin].watson_count/(float)cells[*i].median_bin_count,
@@ -271,7 +258,7 @@ int main(int argc, char **argv)
         std::vector<float> bin_variances(bins.size());
         for (unsigned bin = 0; bin < bins.size(); ++bin) {
             TMeanVarAccumulator<float> meanvar_acc;
-            for(auto i = good_cells.begin(); i != good_cells.end(); ++i)
+            for (auto i = good_cells.begin(); i != good_cells.end(); ++i)
                 meanvar_acc(std::get<0>(norm_counts[*i][bin]) + std::get<1>(norm_counts[*i][bin]));
             bin_means[bin]     = boost::accumulators::mean(meanvar_acc);
             bin_variances[bin] = boost::accumulators::variance(meanvar_acc);
@@ -331,7 +318,7 @@ int main(int argc, char **argv)
 
 
         // calculate cell means and cell variances, grouped by sample (not cell)
-        for(auto i = good_cells.begin(); i != good_cells.end(); ++i) {
+        for (auto i = good_cells.begin(); i != good_cells.end(); ++i) {
 
             // Get mean and var for this cell, but only from good bins!
             TMeanVarAccumulator<float> acc;
@@ -393,7 +380,7 @@ int main(int argc, char **argv)
                          p_trans,     p_trans,     1-2*p_trans});
 
 
-    for(auto i = good_cells.begin(); i != good_cells.end(); ++i)
+    for (auto i = good_cells.begin(); i != good_cells.end(); ++i)
     {
         // set NB(n,p) parameters according to `p` of sample and mean of cell.
         float p = samples[cells[*i].sample_name].p;
@@ -477,7 +464,7 @@ int main(int argc, char **argv)
             }
         };
 
-        if (!write_counts_gzip(conf.f_out.string(),
+        if (!io::write_counts_gzip(conf.f_out.string(),
                           counts,
                           bins,
                           hdr->target_name,

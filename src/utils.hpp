@@ -90,7 +90,6 @@ inline bool get_SM_tag(std::string const& header, std::string& sample_name)
     boost::split(lines, header, boost::is_any_of("\n"));
     TStrParts::const_iterator itH = lines.begin();
     TStrParts::const_iterator itHEnd = lines.end();
-    bool rgPresent = false;
     for(;itH!=itHEnd; ++itH) {
         if (itH->find("@RG")==0) {
             TStrParts keyval;
@@ -102,7 +101,6 @@ inline bool get_SM_tag(std::string const& header, std::string& sample_name)
                 if (sp != std::string::npos) {
                     std::string field = itKV->substr(0, sp);
                     if (field == "SM") {
-                        rgPresent = true;
                         std::string rgSM = itKV->substr(sp+1);
                         smIdentifiers.insert(rgSM);
                     }

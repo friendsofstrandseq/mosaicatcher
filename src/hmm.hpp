@@ -14,11 +14,12 @@
 #include <cassert>
 #include "utils.hpp"
 
-
 // todo: remove if std::setprecision no longer needed
 #include <iomanip>
 
 namespace hmm {
+
+    using count::TGenomeCounts;
 
     static const double INPUT_PRECISION = 0.0001;
     static const double MIN_HMM_LOG = -1e8;
