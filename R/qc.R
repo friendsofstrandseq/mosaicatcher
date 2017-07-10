@@ -17,6 +17,9 @@ format_Mb <- function(x) {
     paste(comma(x/1e6), "Mb")
 }
 
+# if gzip
+if (substr(f_in,nchar(f_in)-2,nchar(f_in)) == ".gz")
+    f_in = paste("zcat",f_in)
 
 # Read counts & filter chromosomes (this is human-specific)
 d = fread(f_in)

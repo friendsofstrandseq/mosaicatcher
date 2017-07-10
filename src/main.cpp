@@ -298,7 +298,7 @@ int main(int argc, char **argv)
                 }
                 assert(badit == bad_bins.end());
             } else {
-                std::cerr << "Cannot write to " << conf.f_removed_bins.string() << std::endl;
+                std::cerr << "[Warning] Cannot write to " << conf.f_removed_bins.string() << std::endl;
             }
         }
 
@@ -357,7 +357,7 @@ int main(int argc, char **argv)
                     out << std::endl;
                 }
             } else {
-                std::cerr << "Cannot write to " << conf.f_sample_info.string() << std::endl;
+                std::cerr << "[Warning] Cannot write to " << conf.f_sample_info.string() << std::endl;
             }
         }
     }
@@ -445,7 +445,7 @@ int main(int argc, char **argv)
                 out << cell.nb_z << std::endl;
             }
         } else {
-            std::cerr << "Cannot write to " << conf.f_info.string() << std::endl;
+            std::cerr << "[Warning] Cannot write to " << conf.f_info.string() << std::endl;
         }
     }
 
