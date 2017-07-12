@@ -90,7 +90,6 @@ bool count_sorted_reads(std::string const & filename,
             continue;
 
         int32_t bin = chrom_map[chrom];
-        int32_t prev_pos = 0;
         hts_itr_t* iter = sam_itr_queryi(idx, chrom, 0, hdr->target_len[chrom]);
         bam1_t* rec = bam_init1();
         while (sam_itr_next(samfile, iter, rec) >= 0) {
@@ -102,8 +101,6 @@ bool count_sorted_reads(std::string const & filename,
 
             // expect pos to be sorted
             int32_t pos = rec->core.pos;
-            assert(pos >= prev_pos);
-            prev_pos = pos;
 
             // skip all bins left of this position.
             // Stop when all bins of the chromosome are done

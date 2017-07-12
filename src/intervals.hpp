@@ -58,7 +58,7 @@ bool make_chrom_map(std::vector<Interval> const & intervals,
             prev = intervals[i].chr;
         }
     }
-    while (j < chrom_map.size())
+    while (j < (int32_t)chrom_map.size())
         chrom_map[j++] = (int32_t)intervals.size();
 
     return true;
@@ -125,18 +125,18 @@ bool create_fixed_bins(std::vector<Interval> & intervals,
         while (pos < hdr->target_len[chrom]) {
 
             // skip excl. bins left of pos
-            while(excl_iter != excl.end() && excl_iter->chr == chrom && excl_iter->end <= pos)
+            while(excl_iter != excl.end() && excl_iter->chr == chrom && excl_iter->end <= (int32_t)pos)
                 ++excl_iter;
 
             Interval ivl;
             ivl.chr = chrom;
 
             // if pos is inside an excl. interval, go to its end
-            if (excl_iter != excl.end() && excl_iter->chr == chrom && pos >= excl_iter->start) {
+            if (excl_iter != excl.end() && excl_iter->chr == chrom && (int32_t)pos >= excl_iter->start) {
                 pos = excl_iter->end;
 
             } // if pos is ok but next interval is closer than binwidth
-            else if (excl_iter != excl.end() && excl_iter->chr == chrom && pos+binwidth >= excl_iter->start) {
+            else if (excl_iter != excl.end() && excl_iter->chr == chrom && (int32_t)(pos+binwidth) >= excl_iter->start) {
                 ivl.start = pos;
                 ivl.end   = std::min((int32_t)(excl_iter->start), (int32_t)(hdr->target_len[chrom]));
                 intervals.push_back(ivl);
