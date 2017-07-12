@@ -82,8 +82,7 @@ for (s in unique(d$sample))
 
     
         # prepare consecutive rectangles for a better plotting experience
-        consecutive = cumsum(abs(diff(as.numeric(as.factor(e$class)))))
-        consecutive = c(consecutive[1], consecutive)
+        consecutive = cumsum(c(0,abs(diff(as.numeric(as.factor(e$class))))))
         e$consecutive = consecutive
         f = e[, .(start = min(start), end = max(end), class = class[1]), by = .(consecutive, chrom)][]
 
