@@ -24,7 +24,7 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include <boost/accumulators/statistics/stats.hpp>
 #include <boost/accumulators/statistics/mean.hpp>
 #include <boost/algorithm/string.hpp>
-
+#include <htslib/sam.h>
 
 
 
@@ -38,9 +38,38 @@ inline uint32_t alignmentLength(bam1_t const* rec) {
 
 
 
+struct CellInfo {
+    unsigned median_bin_count;      /* raw counts */
+    float mean_bin_count;           /* after removal of bad bins */
+    std::string sample_name;
+    int32_t id;                     /* position in conf.f_in */
+    float nb_p, nb_n, nb_z;         /* NB parameters */
+    bool pass_qc;                   /* set to false if no (good) SS library */
+    
+    /* Alignment statistics */
+    unsigned n_mapped, n_pcr_dups, n_supplementary, n_low_mapq, n_read2s;
+    unsigned n_counted, n_unmap;
+    CellInfo() : median_bin_count(0), mean_bin_count(0), id(-1), nb_p(0),
+                 nb_n(0), nb_z(0), pass_qc(true), n_mapped(0), n_pcr_dups(0),
+                 n_supplementary(0), n_low_mapq(0), n_read2s(0), n_counted(0),
+                 n_unmap(0)
+    {}
+};
+
+struct SampleInfo {
+    std::vector<float> means;
+    std::vector<float> vars;
+    float p;
+    SampleInfo() : p(0.33) {}
+};
+
+
 
 template <typename TReturn>
 using TMedianAccumulator = boost::accumulators::accumulator_set<TReturn, boost::accumulators::stats<boost::accumulators::tag::median> >;
+
+template <typename TReturn>
+using TMeanVarAccumulator = boost::accumulators::accumulator_set<TReturn, boost::accumulators::stats<boost::accumulators::tag::mean, boost::accumulators::tag::variance> >;
 
 
 double sum(std::vector<double> const & vec)
@@ -61,7 +90,6 @@ inline bool get_SM_tag(std::string const& header, std::string& sample_name)
     boost::split(lines, header, boost::is_any_of("\n"));
     TStrParts::const_iterator itH = lines.begin();
     TStrParts::const_iterator itHEnd = lines.end();
-    bool rgPresent = false;
     for(;itH!=itHEnd; ++itH) {
         if (itH->find("@RG")==0) {
             TStrParts keyval;
@@ -73,7 +101,6 @@ inline bool get_SM_tag(std::string const& header, std::string& sample_name)
                 if (sp != std::string::npos) {
                     std::string field = itKV->substr(0, sp);
                     if (field == "SM") {
-                        rgPresent = true;
                         std::string rgSM = itKV->substr(sp+1);
                         smIdentifiers.insert(rgSM);
                     }

@@ -1,9 +1,13 @@
-#ifndef calc_bins_hpp
-#define calc_bins_hpp
+#ifndef intervals_hpp
+#define intervals_hpp
 
 #include <algorithm>
 #include <boost/tokenizer.hpp>
 #include <htslib/sam.h>
+
+namespace interval {
+
+
 
 // BED interval: 0-based, right-exclusive
 struct Interval {
@@ -12,9 +16,12 @@ struct Interval {
     int32_t end;
     Interval() : chr(0), start(0), end(0) {}
     Interval(int32_t tid, int32_t s, int32_t e): chr(tid), start(s), end(e) {}
+    bool operator<(Interval const & other) const {
+        return chr == other.chr ? start < other.start : chr < other.chr;
+    }
 };
 
-auto interval_comp = [] (Interval const & a, Interval const & b) {
+auto less = [] (Interval const & a, Interval const & b) {
     if (a.chr == b.chr)
         // special condition: If intervals start at the same position, prefer larger one!
         if (a.start == b.start)
@@ -26,13 +33,51 @@ auto interval_comp = [] (Interval const & a, Interval const & b) {
 };
 
 
-/**
- *  read_dynamic_bins
- *  -----------------
- *  read bed file. Sort intervals by chrom, start. Check they don't overlap.
- *  return sorted bin vector plus a chrom_map that stores first bin number 
- *  of each tid
+
+
+/** Given a list of genomic intervals, check that they are non-overlapping
+ * and calculate `chrom_map` (pointers to first interval of each chromosome
+ *
+ * @param intervals **sorted** list of bed intervals
+ * @param chrom_map vector of chromosome numbers. Must have correct size.
  */
+bool make_chrom_map(std::vector<Interval> const & intervals,
+                    std::vector<int32_t> & chrom_map) {
+
+    // check that intervals don't overlap
+    int32_t prev = -1, j = 0;
+    for (unsigned i=0; i<intervals.size(); ++i) {
+        if (intervals[i].chr == prev) {
+            if (intervals[i-1].end > intervals[i].start) {
+                std::cerr << "Intervals overlap. This is not supported!" << std::endl;
+                return false;
+            }
+        } else {
+            while (j<=intervals[i].chr)
+                chrom_map[j++] = i;
+            prev = intervals[i].chr;
+        }
+    }
+    while (j < (int32_t)chrom_map.size())
+        chrom_map[j++] = (int32_t)intervals.size();
+
+    return true;
+}
+
+
+
+
+/** read_dynamic_bins
+  *
+  * read bed file. Sort intervals by chrom, start. Check they don't overlap.
+  * return sorted bin vector plus a chrom_map that stores first bin number
+  * of each tid
+  *
+  * @param intervals vector of intervals to be written (initially empty)
+  * @param chrom_map vector of chromosome numbers. Must have correct size.
+  * @param filename BED file name
+  * @param hdr BAM header needed to know number of chromosomes and tids.
+  */
 template <typename TFilename>
 bool read_dynamic_bins(std::vector<Interval> & intervals,
                        std::vector<int32_t> & chrom_map,
@@ -49,27 +94,14 @@ bool read_dynamic_bins(std::vector<Interval> & intervals,
     }
 
     // sort intervals
-    std::sort(intervals.begin(), intervals.end(), interval_comp);
+    std::sort(intervals.begin(), intervals.end(), less);
 
     // check that intervals don't overlap
-    int32_t prev = -1, j = 0;
-    for (unsigned i=0; i<intervals.size();++i) {
-        if (intervals[i].chr == prev) {
-            if (intervals[i-1].end > intervals[i].start) {
-                std::cerr << "Intervals overlap. This is not supported!" << std::endl;
-                return false;
-            }
-        } else {
-            while (j<=intervals[i].chr)
-                chrom_map[j++] = i;
-            prev = intervals[i].chr;
-        }
-    }
-    while (j<hdr->n_targets)
-        chrom_map[j++] = (int32_t)intervals.size();
-
-    return true;
+    return make_chrom_map(intervals, chrom_map);
 }
+
+
+
 
 
 bool create_fixed_bins(std::vector<Interval> & intervals,
@@ -93,18 +125,18 @@ bool create_fixed_bins(std::vector<Interval> & intervals,
         while (pos < hdr->target_len[chrom]) {
 
             // skip excl. bins left of pos
-            while(excl_iter != excl.end() && excl_iter->chr == chrom && excl_iter->end <= pos)
+            while(excl_iter != excl.end() && excl_iter->chr == chrom && excl_iter->end <= (int32_t)pos)
                 ++excl_iter;
 
             Interval ivl;
             ivl.chr = chrom;
 
             // if pos is inside an excl. interval, go to its end
-            if (excl_iter != excl.end() && excl_iter->chr == chrom && pos >= excl_iter->start) {
+            if (excl_iter != excl.end() && excl_iter->chr == chrom && (int32_t)pos >= excl_iter->start) {
                 pos = excl_iter->end;
 
             } // if pos is ok but next interval is closer than binwidth
-            else if (excl_iter != excl.end() && excl_iter->chr == chrom && pos+binwidth >= excl_iter->start) {
+            else if (excl_iter != excl.end() && excl_iter->chr == chrom && (int32_t)(pos+binwidth) >= excl_iter->start) {
                 ivl.start = pos;
                 ivl.end   = std::min((int32_t)(excl_iter->start), (int32_t)(hdr->target_len[chrom]));
                 intervals.push_back(ivl);
@@ -166,7 +198,7 @@ bool read_exclude_file(std::string const & filename, bam_hdr_t* hdr, std::vector
         }
         interval_file.close();
     } else {
-        std::cerr << "Error: Exclude file cannot be read: " << filename << std::endl;
+        std::cerr << "Error: BED file cannot be read: " << filename << std::endl;
         return false;
     }
     return true;
@@ -174,4 +206,5 @@ bool read_exclude_file(std::string const & filename, bam_hdr_t* hdr, std::vector
 
 
 
-#endif /* calc_bins_hpp */
+}
+#endif /* intervals_hpp */
