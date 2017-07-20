@@ -1,6 +1,9 @@
 #ifndef intervals_hpp
 #define intervals_hpp
 
+#include <iostream>
+#include <fstream>
+
 #include <algorithm>
 #include <boost/tokenizer.hpp>
 #include <htslib/sam.h>
@@ -32,6 +35,10 @@ auto less = [] (Interval const & a, Interval const & b) {
         return a.chr < b.chr;
 };
 
+std::ostream &operator<<(std::ostream &out, Interval const & bin)
+{
+    return (out << bin.chr << ":" << bin.start << "-" << bin.end);
+}
 
 
 
@@ -102,17 +109,32 @@ bool read_dynamic_bins(std::vector<Interval> & intervals,
 
 
 
-
-
+/** Create fixed-width bed intervals along the genome
+  *
+  * When regions are excluded bins can be truncated on the right end and
+  * new bins always start at the last base of the exclude interval.
+  *
+  * Note that I removed the dependency on BAM hdrs from this function. I
+  * should also do this for the other functions in this file.
+  *
+  * @param intervals vector of intervals to be written (initially empty)
+  * @param chrom_map vector of chromosome numbers. Must have correct size
+  * @param binwidth obviously, the size of the bins
+  * @param excl list of intervals to be exlcuded
+  * @param n_targets number of chromosomes
+  * @param target_len list of chromosome lengths, e.g. hdr->target_len
+  */
+template <typename TVec>
 bool create_fixed_bins(std::vector<Interval> & intervals,
                        std::vector<int32_t> & chrom_map,
                        unsigned binwidth,
                        std::vector<Interval> const & excl,
-                       bam_hdr_t* hdr)
+                       int32_t n_targets,
+                       TVec const & target_len)
 {
     auto excl_iter = excl.begin();
 
-    for (int32_t chrom=0; chrom<hdr->n_targets; ++chrom)
+    for (int32_t chrom=0; chrom<n_targets; ++chrom)
     {
         // store chrom-pointer in chrom_map
         chrom_map[chrom] = (int32_t)intervals.size();
@@ -122,7 +144,7 @@ bool create_fixed_bins(std::vector<Interval> & intervals,
             ++excl_iter;
 
         unsigned pos = 0;
-        while (pos < hdr->target_len[chrom]) {
+        while (pos < target_len[chrom]) {
 
             // skip excl. bins left of pos
             while(excl_iter != excl.end() && excl_iter->chr == chrom && excl_iter->end <= (int32_t)pos)
@@ -138,7 +160,7 @@ bool create_fixed_bins(std::vector<Interval> & intervals,
             } // if pos is ok but next interval is closer than binwidth
             else if (excl_iter != excl.end() && excl_iter->chr == chrom && (int32_t)(pos+binwidth) >= excl_iter->start) {
                 ivl.start = pos;
-                ivl.end   = std::min((int32_t)(excl_iter->start), (int32_t)(hdr->target_len[chrom]));
+                ivl.end   = std::min((int32_t)(excl_iter->start), (int32_t)(target_len[chrom]));
                 intervals.push_back(ivl);
                 pos = excl_iter->end;
 
@@ -147,7 +169,7 @@ bool create_fixed_bins(std::vector<Interval> & intervals,
                 Interval ivl;
                 ivl.chr = chrom;
                 ivl.start = pos;
-                ivl.end   = std::min(pos+binwidth, (unsigned)hdr->target_len[chrom]);
+                ivl.end   = std::min(pos+binwidth, (unsigned)target_len[chrom]);
                 intervals.push_back(ivl);
                 pos += binwidth;
             }

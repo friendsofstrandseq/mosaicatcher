@@ -193,7 +193,7 @@ int main(int argc, char **argv)
             sort(exclude.begin(), exclude.end(), interval::less);
         }
         std::cout << "Creating " << round(conf.window/1000) << "kb bins with " << exclude.size() << " excluded regions" << std::endl;
-        create_fixed_bins(bins, chrom_map, conf.window, exclude, hdr);
+        create_fixed_bins(bins, chrom_map, conf.window, exclude, hdr->n_targets, hdr->target_len);
         median_binsize = conf.window;
     }
     // add last element for easy calculation of number of bins
