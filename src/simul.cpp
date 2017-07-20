@@ -56,18 +56,18 @@ int main(int argc, char **argv)
 
     boost::program_options::options_description po_out("Output options");
     po_out.add_options()
-    ("out,o",         boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("simulated.txt.gz"), "output count file (simulated.txt.gz)")
+    ("out,o",         boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt.gz"), "output count file")
     ("sceFile,S",     boost::program_options::value<boost::filesystem::path>(&conf.f_sce), "output the positions of SCEs")
     ;
 
 
     boost::program_options::options_description po_rand("Radnomization parameters");
     po_rand.add_options()
-    ("nbinom_p,p",    boost::program_options::value<double>(&conf.p)->default_value(0.8), "p parameter of the negative binomial distirbution")
+    ("nbinom_p,p",    boost::program_options::value<double>(&conf.p)->default_value(0.8,"0.8"), "p parameter of the NB distirbution")
     ("minCoverage,c", boost::program_options::value<double>(&conf.min_cov)->default_value(10), "min. read coverage per bin")
     ("maxCoverage,C", boost::program_options::value<double>(&conf.max_cov)->default_value(60), "max. read coverage per bin")
-    ("alpha,a",       boost::program_options::value<double>(&conf.alpha)->default_value(0.1), "noise added to all bins: mostly 0, but for a fraction alpha drawn from geometrix distribution")
-    ("scesPerCell,s", boost::program_options::value<unsigned>(&conf.sce_num)->default_value(4), "Average number of SCEs per cell (set to 0 to switch off SCEs)")
+    ("alpha,a",       boost::program_options::value<double>(&conf.alpha)->default_value(0.1,"0.1"), "noise added to all bins: mostly 0, but for a fraction alpha drawn from geometrix distribution")
+    ("scesPerCell,s", boost::program_options::value<unsigned>(&conf.sce_num)->default_value(4), "Average number of SCEs per cell")
     ;
 
 
