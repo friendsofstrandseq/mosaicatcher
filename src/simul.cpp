@@ -30,8 +30,6 @@ struct Conf {
 
     double p, min_cov, max_cov, alpha;
     unsigned sce_num;
-
-    unsigned mean_sv_len;
 };
 
 template <typename TString>
@@ -94,11 +92,34 @@ int main(int argc, char **argv)
         std::cout << "Usage: " << argv[0] << " [OPTIONS] sv_config_file" << std::endl;
         std::cout << po_visible_options << std::endl;
         std::cout << std::endl;
-        std::cout << "SV config file is not yet implemented" << std::endl;
+        std::cout << "Simulate Strand-seq libraries" << std::endl;
+        std::cout << "=============================" << std::endl;
+        std::cout << "Simulate binned Strand-seq read counts of single cells" << std::endl;
+        std::cout << "with chromosomes inherited randomly as WW,WC or CC." << std::endl;
+        std::cout << "Introduce SVs from a given file and randomly add SCEs." << std::endl;
+        std::cout << "To not include SVs, specify an empty file." << std::endl;
+        std::cout << std::endl;
+        std::cout << "The SV config file is a tab-separated file with 5 columns:" << std::endl;
+        std::cout << "  - Chrom" << std::endl;
+        std::cout << "  - Start" << std::endl;
+        std::cout << "  - End"   << std::endl;
+        std::cout << "  - SV type*" << std::endl;
+        std::cout << "  - average allele frequency [0,1]" << std::endl;
+        std::cout << std::endl;
+        std::cout << "The allowed SV types are" << std::endl;
+        std::cout << "  - het_del, hom_del" << std::endl;
+        std::cout << "  - het_dup, hom_dup" << std::endl;
+        std::cout << "  - het_inv, hom_inv" << std::endl;
+        std::cout << "  - inv_dup" << std::endl;
+        std::cout << "  - false_del (to simulate lower mappability region)" << std::endl;
+        std::cout << std::endl;
+        std::cout << "SV breakpoints inside a bin are modelled proportionally." << std::endl;
+        std::cout << "Strand state annotation ignores SVs" << std::endl;
         return 1;
     }
 
     // Generate bins
+    // todo: make choice of genome a parameter
     std::vector<Interval>       bins;
     std::vector<int32_t>        chrom_map;
     std::vector<int32_t>  chrom_sizes = { \
@@ -113,10 +134,12 @@ int main(int argc, char **argv)
         "chr7",  "chr8",  "chr9",  "chr10", "chr11", "chr12",
         "chr13", "chr14", "chr15", "chr16", "chr17", "chr18",
         "chr19", "chr20", "chr21", "chr22",  "chrX",  "chrY" };
+
+
+    std::cout << "Resolution: " << conf.window/1000 << "kb" << std::endl;
     chrom_map.resize(chrom_sizes.size());
     create_fixed_bins(bins, chrom_map, conf.window, std::vector<Interval>(), (int32_t)chrom_sizes.size(), chrom_sizes);
     chrom_map.push_back((int32_t)bins.size());
-
 
     // Random generator
     std::random_device rd;
@@ -132,7 +155,7 @@ int main(int argc, char **argv)
     std::uniform_real_distribution<> rd_unif(0,1);
     double p = conf.p;
 
-    std::cout << "Simulating " << conf.n_cells << " cells" << std::endl;
+    std::cout << "Simulating  " << conf.n_cells << " cells" << std::endl;
     for (unsigned i = 0; i < conf.n_cells; ++i)
     {
         double cov_per_bin = rd_cov(rd_gen);
@@ -155,67 +178,54 @@ int main(int argc, char **argv)
     }
 
 
+    // SV part
 
-/*
+    // Make sure that intervals are within bounds now!!
+    std::vector<SV> sv_list;
+    read_SV_config_file(conf.f_sv.string(), chrom_names, chrom_sizes, sv_list);
 
-    std::vector<SV> sv_list {SV(Interval(0, 10000000, 20000000), "het_inv")};
 
     // for each SV
-    for (SV const & sv : sv_list)
-    {
-        // draw chromosome
-        int32_t sv_chrom = pick_random_chrom(chrom_map, rd_gen);
-        assert(sv_chrom >= 0);
+    std::cout << "--------------------" << std::endl;
+    for (SV const & sv : sv_list) {
 
-        // draw position and length
-        std::poisson_distribution<> rd_len(conf.mean_sv_len);
-        unsigned sv_len = rd_len(rd_gen);
+        std::cout << "SV " << chrom_names[sv.where.chr] << ":" << sv.where.start << "-" << sv.where.end << std::endl;
+        auto x = locate_partial_bins(sv.where, bins, chrom_map);
 
-        std::uniform_int_distribution<> rd_bin(0, chrom_map[sv_chrom] - sv_len - 1);
-        unsigned sv_bin = rd_bin(rd_gen);
+        unsigned cell_counter = 0;
+        for (unsigned i = 0; i < haplotypes.size(); ++i) {
 
-        std::cout << "Het inv at " << bins[sv_bin] << " spanning " << sv_len << " bins at VAF " << sv_vaf[s] << std::endl;
-        for (unsigned i = 0; i < haplotypes.size(); ++i)
-        {
-            // this cell has the SV
-            if (rd_unif(rd_gen) < sv_vaf[s])
-            {
-                simulate_het_inv(haplotypes[i], sv_bin, sv_len);
+            // sample carriers
+            if (rd_unif(rd_gen) < sv.vaf) {
+                cell_counter++;
+
+                float fl = x.second.first;
+                float fr = x.second.second;
+
+                if (x.first.first == x.first.second) {
+
+                    // There is only one bin
+                    flip_strand(haplotypes[i][x.first.first], sv.type, fl - (1-fr));
+                } else {
+
+                    // Partially flip first bin
+                    flip_strand(haplotypes[i][x.first.first], sv.type, fl);
+
+                    // Partially flip last bin
+                    flip_strand(haplotypes[i][x.first.second], sv.type, fr);
+
+                    // Completely flip all bins in between
+                    for (unsigned bin = x.first.first+1; bin < x.first.second; ++bin) {
+                        flip_strand(haplotypes[i][bin], sv.type);
+                    }
+                }
             }
         }
+        std::cout << "   in " << cell_counter << " cells" << std::endl;
     }
 
 
-
-
-    // draw chromosome
-    int32_t sv_chrom = pick_random_chrom(chrom_map, rd_gen);
-    assert(sv_chrom >= 0);
-
-    // draw position and length
-    std::poisson_distribution<> rd_len(conf.mean_sv_len);
-    unsigned sv_len = rd_len(rd_gen);
-
-    std::uniform_int_distribution<> rd_bin(0, chrom_map[sv_chrom] - sv_len - 1);
-    unsigned sv_bin = rd_bin(rd_gen);
-
-    std::cout << "Het inv at " << bins[sv_bin] << " spanning " << sv_len << " bins at VAF " << sv_vaf[s] << std::endl;
-    for (unsigned i = 0; i < haplotypes.size(); ++i)
-    {
-        // this cell has the SV
-        if (rd_unif(rd_gen) < sv_vaf[s])
-        {
-            simulate_het_inv(haplotypes[i], sv_bin, sv_len);
-        }
-    }
-*/
-
-
-
-
-
-    // Turn haplotypes into TGenomeCounts
-    // and simulate SCEs
+    // Turn haplotypes into TGenomeCounts and simulate SCEs
     float sce_prob = (float)conf.sce_num / bins.size();
     std::vector<TGenomeCounts> final_counts;
     std::vector<unsigned> sces;
@@ -238,8 +248,5 @@ int main(int argc, char **argv)
         for (auto x : sces)
             std::cout << bins[x] << std::endl;
     }
-
-
-
 
 }
