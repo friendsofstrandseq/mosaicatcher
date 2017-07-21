@@ -38,14 +38,17 @@ BOOSTSOURCES = $(wildcard src/boost/libs/iostreams/include/boost/iostreams/*.hpp
 
 
 # Targets
-TARGETS = .htslib .boost src/main src/calc_bins
+TARGETS = .htslib .boost src/main src/calc_bins src/simul
 
 all: $(TARGETS)
 
 src/main: .boost .htslib src/main.cpp $(wildcard src/*.hpp)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/calc_bins: .boost .htslib src/calc_bins.cpp
+src/calc_bins: .boost .htslib src/calc_bins.cpp $(wildcard src/*.hpp)
+	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
+
+src/simul: .boost .htslib src/simul.cpp $(wildcard src/*.hpp)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 .htslib: $(HTSLIBSOURCES)
