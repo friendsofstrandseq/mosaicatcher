@@ -45,3 +45,14 @@ Sequencing reads from a single cell should be grouped into a single BAM file and
 
 The BAM file must contain a single read group. Cells are grouped to samples based on this `SM` tag.
 
+
+## Simulation
+
+Simualte strand-seq + SVs data on the level of binned counts. Preliminary!
+
+```
+./src/simul -o data/simulation/out.txt.gz data/simulation/example.txt
+Rscript R/qc.R data/simulation/out.txt.gz data/simulation/out.txt.pdf
+```
+
+
