@@ -15,8 +15,8 @@ are already installed, you can checkout without `--recursive`. Here is an exampl
 ```
 git clone https://github.com/friendsofstrandseq/mosaicatcher.git
 cd mosaicatcher
-module load Boost
-module load HTSlib
+module load Boost HTSlib
+touch .htslib .boost
 make
 ./src/main
 ```
