@@ -48,7 +48,7 @@ The BAM file must contain a single read group. Cells are grouped to samples base
 
 ## Simulation
 
-Simualte strand-seq + SVs data on the level of binned counts. Preliminary!
+Simulate strand-seq data and SVs on the level of binned counts.
 
 ```
 ./src/simul -o data/simulation/out.txt.gz data/simulation/example.txt
