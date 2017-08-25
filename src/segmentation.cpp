@@ -400,6 +400,7 @@ int main(int argc, char** argv) {
 
     // OUTPUT file
     std::ofstream out(conf.f_out.string());
+    out << "k\tlogLik\tbreakpoint\tchrom\tstart\tend" << std::endl;
 
     // Segmentation chromosome per chromosome
     // This loop can later be parallelized
@@ -482,8 +483,7 @@ int main(int argc, char** argv) {
 
         // Output of breakpoints;
         if (out.is_open()) {
-            std::cout << "[Write] " << chromosomes[chrom] << " to file: " << conf.f_out.string() << std::endl;
-            out << "k\tlogLik\tbreakpoint\tchrom\tstart\tend" << std::endl;
+            std::cout << "    [Write] " << chromosomes[chrom] << " to file: " << conf.f_out.string() << std::endl;
             for (unsigned cp = 0; cp < max_cp; ++cp) {
                 for (unsigned k = 0; k <= cp; ++k) {
                     out << cp+1 << "\t";
