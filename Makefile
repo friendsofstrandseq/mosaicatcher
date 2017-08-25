@@ -38,7 +38,7 @@ BOOSTSOURCES = $(wildcard src/boost/libs/iostreams/include/boost/iostreams/*.hpp
 
 
 # Targets
-TARGETS = .htslib .boost src/main src/calc_bins
+TARGETS = .htslib .boost src/main src/calc_bins src/segmentation
 
 all: $(TARGETS)
 
@@ -47,6 +47,9 @@ src/main: .boost .htslib src/main.cpp $(wildcard src/*.hpp)
 
 src/calc_bins: .boost .htslib src/calc_bins.cpp
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
+
+src/segmentation: .boost .htslib src/segmentation.cpp
+        $(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 .htslib: $(HTSLIBSOURCES)
 	cd src/htslib && make && make lib-static && cd ../../ && touch .htslib
