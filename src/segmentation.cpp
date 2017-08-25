@@ -5,6 +5,21 @@
 #include <math.h>  // M_PI
 #include <iomanip> // setw
 #include <numeric> // partial_sum
+#include <chrono>
+
+#include <boost/program_options/cmdline.hpp>
+#include <boost/program_options/options_description.hpp>
+#include <boost/program_options/parsers.hpp>
+#include <boost/program_options/variables_map.hpp>
+#include <boost/filesystem.hpp>
+
+#include "utils.hpp"
+#include "iocounts.hpp"
+
+
+using interval::Interval;
+using count::TGenomeCounts;
+using count::Counter;
 
 /**
  * @file
@@ -39,7 +54,7 @@ template <typename TMat> void print_mat(TMat const & G) {
 }
 
 /**
- * @fn bool segmentation(Matrix<float> const & cost, int max_cp, Matrix<int> & breakpoints, std::vector<float> & log_lik)
+ * @fn bool optimal_segment_dp(Matrix<float> const & cost, int max_cp, Matrix<int> & breakpoints, std::vector<float> & log_lik)
  * @ingroup segmentation
  * Find optimal segmentation based on a cost matrix.
  *  
@@ -61,7 +76,7 @@ template <typename TMat> void print_mat(TMat const & G) {
  * @param breakpoints Breakpoints for k=1..max_cp will be written in here
  * @param log_lik Something similar to BIC is written in here. Might be useful for model selection.
  */
-bool segmentation(Matrix<float> const & cost,
+bool optimal_segment_dp(Matrix<float> const & cost,
                   int max_cp,
                   Matrix<int> & breakpoints,
                   std::vector<float> & log_lik)
@@ -148,14 +163,6 @@ bool segmentation(Matrix<float> const & cost,
             breakpoints[cp][j] = i;
         }
     }
-    std::cout << "Vector logLik" << std::endl;
-    for (auto x : log_lik)
-        std::cout << x << "\t";
-    std::cout << std::endl;
-
-    std::cout << "Matrix breakpoints" << std::endl;
-    print_mat(breakpoints);
-
     return true;
 }
 
@@ -221,6 +228,7 @@ Matrix<float> calculate_cost_matrix(std::vector<float> const & data,
 
     return G;                                                                           // TOTAL: O(N * maxk) <= O(N^2)
 }
+
 
 
 /**
@@ -291,33 +299,208 @@ bool calculate_cost_matrix(Matrix<float> const & data,                         /
 }
 
 
-
-int main() {
-
-    //                            1    2    3    4    5    6    7    8    9   10   11   12   13   14   15
-    //                          102  102  100  100  100  100  100  100  100  104  104  100  100  100  100
-    //                          =========-----------------------------------==========-------------------
-    Matrix<float> data   = {{100, 100, 100, 100, 100,  50,  50,  50,  50,  50, 100, 100, 100, 100, 100},
-                            {  2,   2,   0,   0,   0,  50,  50,  50,  50,  54,   4,   0,   0,   0,   0}};
-
-    // real values:
-    unsigned max_cp = 4;
-    unsigned max_k  = 15;
-
-    // New Cost matrix
-    Matrix<float> new_cost;
-    calculate_cost_matrix(data, max_k, new_cost);
-    std::cout << "NEW cost matrix (maxk x N):" << std::endl;
-    print_mat(new_cost);
-
-    // Find optimal segmentation
-    Matrix<int> breakpoints;
-    std::vector<float> log_lik;
-    if (!segmentation(new_cost, max_cp, breakpoints, log_lik))
-        std::cerr << "[ERROR] Segmentation failed" << std::endl;
+struct Conf {
+    boost::filesystem::path f_in;
+    boost::filesystem::path f_out;
+    float max_bp_per_Mb;
+    unsigned max_segment_length;
+};
 
 
+int main(int argc, char** argv) {
 
+    Conf conf;
+    boost::program_options::options_description generic("Generic options");
+    generic.add_options()
+    ("help,?", "show help message")
+    ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.bed"), "output file for counts")
+    ("max_bp,m", boost::program_options::value<float>(&conf.max_bp_per_Mb)->default_value(0.5), "maximum number of breakpoints per Mb")
+    ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(20000000), "maximum segment length")
+    ;
+
+    boost::program_options::options_description hidden("Hidden options");
+    hidden.add_options()
+    ("input-file", boost::program_options::value<boost::filesystem::path>(&conf.f_in), "mosaicatcher count file")
+    ;
+
+    boost::program_options::positional_options_description pos_args;
+    pos_args.add("input-file", 1);
+
+
+    boost::program_options::options_description cmdline_options;
+    cmdline_options.add(generic).add(hidden);
+    boost::program_options::options_description visible_options;
+    visible_options.add(generic);
+    boost::program_options::variables_map vm;
+
+    boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(pos_args).run(), vm);
+    boost::program_options::notify(vm);
+
+    if (vm.count("help") || !vm.count("input-file")) {
+
+    print_usage_and_exit:
+        std::cout << "Usage: " << argv[0] << " [OPTIONS] count_file.txt.gz" << std::endl;
+        std::cout << visible_options << std::endl;
+        return 1;
+    }
+
+    std::chrono::steady_clock::time_point t1, t2, t3, t4;
+
+
+    // Reading count file
+    std::vector<std::pair<std::string,std::string>> sample_cell_names;
+    std::vector<std::string> chromosomes;
+    std::vector<Interval> bins;
+    std::vector<TGenomeCounts> counts;
+
+    t1 = std::chrono::steady_clock::now();
+    std::cout << "Reading file " << conf.f_in.string() << " (this is a bit slow)..." << std::endl;
+    if (!io::read_counts_gzip(conf.f_in.string(),
+                              counts,
+                              chromosomes,
+                              sample_cell_names,
+                              bins))
+        return 1;
+
+
+    // Create chromosome map
+    std::vector<int32_t> chrom_map(chromosomes.size());
+    if (!make_chrom_map(bins, chrom_map)) {
+        std::cerr << "[Error] Something is wrong with the intervals" << std::endl;
+        return 2;
+    }
+    // add last element for easy calculation of number of bins
+    chrom_map.push_back((int32_t)bins.size());
+
+    t2 = std::chrono::steady_clock::now();
+    auto time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+    std::cout << "    Read " << bins.size() << " intervals across " << chromosomes.size() << " chromosomes." << std::endl;
+    std::cout << "    In total " << counts.size() << " cells" << std::endl;
+    std::cout << "    This took " << time.count() << " seconds." << std::endl;
+
+
+    // Determine window size
+    unsigned window_size;
+    {
+        TMeanVarAccumulator<float> mean_acc;
+        for (auto bin : bins)
+            mean_acc((float)(bin.end - bin.start));
+        window_size = (unsigned) boost::accumulators::mean(mean_acc);
+    }
+
+
+    // Mean count per sample
+    std::vector<float> mean_per_sample(counts.size());
+    for (unsigned i=0; i<counts.size(); ++i) {
+        TMeanVarAccumulator<float> mean_acc;
+        for (auto j = 0; j < bins.size(); ++j)
+            mean_acc((counts[i][j]).watson_count + (counts[i][j]).crick_count);
+        mean_per_sample[i] = boost::accumulators::mean(mean_acc);
+    }
+
+    // OUTPUT file
+    std::ofstream out(conf.f_out.string());
+
+    // Segmentation chromosome per chromosome
+    // This loop can later be parallelized
+    for (int32_t chrom=0; chrom < chromosomes.size(); ++chrom)
+    {
+        unsigned N = chrom_map[chrom+1] - chrom_map[chrom];
+        if (N < 1) continue;
+
+        // parameters:
+        unsigned chrom_size = bins[chrom_map[chrom+1]-1].end - bins[chrom_map[chrom]].start;
+        // max_k = longest allowed segment = 20Mb or max chrom_size
+        unsigned max_k  = std::min(std::max(static_cast<unsigned>(10),
+                                            static_cast<unsigned>(conf.max_segment_length/window_size)),
+                                   static_cast<unsigned>(N));
+        // max_cp = max. number of change points = max_bp_per_Mb * Mb, but at least 10
+        unsigned max_cp = std::min(std::max(static_cast<unsigned>(10),
+                                            static_cast<unsigned>(ceil((float)chrom_size/1e6 * conf.max_bp_per_Mb))),
+                                   N-1);
+
+        std::cout << "Running segmentation on "
+                  << chromosomes[chrom]
+                  << ": "
+                  << (chrom_size/1e5)/(float)10
+                  << "Mb (N = "
+                  << N
+                  << "), longest segment ~= "
+                  << (max_k * window_size/1e5)/(float)10
+                  << "Mb (max_k = "
+                  << max_k
+                  << "), max. number of breakpoints = "
+                  << max_k
+                  << std::endl;
+
+
+
+        // Put all cells into data:
+        t1 = std::chrono::steady_clock::now();
+        Matrix<float> data;
+        // temporarily write counts into this vector before adding to data
+        std::vector<float> tmp(N);
+        for (unsigned i = 0; i < counts.size(); ++i)
+        {
+            float sample_mean = mean_per_sample[i];
+
+            std::transform(counts[i].begin() + chrom_map[chrom],
+                           counts[i].begin() + chrom_map[chrom] + N,
+                           tmp.begin(),
+                           [sample_mean](Counter const & c){return (float) c.watson_count / sample_mean;});
+            data.push_back(tmp);
+            std::transform(counts[i].begin() + chrom_map[chrom],
+                           counts[i].begin() + chrom_map[chrom] + N,
+                           tmp.begin(),
+                           [sample_mean](Counter const & c){return (float) c.crick_count / sample_mean;});
+            data.push_back(tmp);
+        }
+        tmp.clear();
+        t2 = std::chrono::steady_clock::now();
+        std::cout << "    Preparing `data` took " << std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count() << " seconds." << std::endl;
+
+
+
+        // New Cost matrix
+        t1 = std::chrono::steady_clock::now();
+        Matrix<float> new_cost;
+        calculate_cost_matrix(data, max_k, new_cost);
+        t2 = std::chrono::steady_clock::now();
+        std::cout << "    Cost matrix (" << max_k << " x " << N << ") took " << std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count() << " seconds." << std::endl;
+
+
+        // Find optimal segmentation
+        t1 = std::chrono::steady_clock::now();
+        Matrix<int> breakpoints;
+        std::vector<float> log_lik;
+        if (!optimal_segment_dp(new_cost, max_cp, breakpoints, log_lik))
+            std::cerr << "[ERROR] Segmentation failed" << std::endl;
+        t2 = std::chrono::steady_clock::now();
+        std::cout << "    Optimal segmentation (" << max_cp << " x " << N << ") took " << std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count() << " seconds." << std::endl;
+
+
+
+        // Output of breakpoints;
+        if (out.is_open()) {
+            std::cout << "[Write] " << chromosomes[chrom] << " to file: " << conf.f_out.string() << std::endl;
+            out << "k\tlogLik\tbreakpoint\tchrom\tstart\tend" << std::endl;
+            for (unsigned cp = 0; cp < max_cp; ++cp) {
+                for (unsigned k = 0; k <= cp; ++k) {
+                    out << cp+1 << "\t";
+                    out << log_lik[cp] << "\t";
+                    out << breakpoints[cp][k] << "\t";
+                    out << chromosomes[chrom] << "\t";
+                    unsigned from = k==0 ? 0 : breakpoints[cp][k-1];
+                    unsigned to   = breakpoints[cp][k]-1;
+                    out << bins[from].start << "\t";
+                    out << bins[to].end << std::endl;
+                }
+            }
+        } else {
+            std::cerr << "[Warning] Cannot write to " << conf.f_out.string() << std::endl;
+        }
+
+    }
 } // main
 
 
