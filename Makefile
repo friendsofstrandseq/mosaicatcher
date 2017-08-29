@@ -49,7 +49,7 @@ src/calc_bins: .boost .htslib src/calc_bins.cpp
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 src/segmentation: .boost .htslib src/segmentation.cpp
-        $(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 .htslib: $(HTSLIBSOURCES)
 	cd src/htslib && make && make lib-static && cd ../../ && touch .htslib
