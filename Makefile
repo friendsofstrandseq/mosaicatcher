@@ -57,6 +57,9 @@ src/segmentation: .boost .htslib src/segmentation.cpp
 .boost: $(BOOSTSOURCES)
 	cd src/boost && ./bootstrap.sh --prefix=${PWD}/src/boost --without-icu --with-libraries=iostreams,filesystem,system,program_options,date_time && ./b2 && ./b2 headers && cd ../../ && touch .boost
 
+doc/html/index.html: doc/Doxyfile
+	cd src && doxygen ../doc/Doxyfile
+
 clean:
 	cd src/htslib && make clean
 	cd src/boost && ./b2 --clean-all
