@@ -431,7 +431,7 @@ int main(int argc, char** argv) {
                   << "Mb (max_k = "
                   << max_k
                   << "), max. number of breakpoints = "
-                  << max_k
+                  << max_cp
                   << std::endl;
 
 
