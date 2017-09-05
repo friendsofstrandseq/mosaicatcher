@@ -152,7 +152,10 @@ bool optimal_segment_dp(Matrix<float> const & cost,
     {
         /* Calculate J, the log-likelihood. */
         float z = dp[N-1][cp];
-        log_lik[cp] = (z > 0) ? -(float)N / 2.0 * (1 + log(2*M_PI) + log(z / N)) : -1e10;  // 1e10 as a really really low value
+        //log_lik[cp] = (z > 0) ? -(float)N / 2.0 * (1 + log(2*M_PI) + log(z / N)) : -1e10;  // 1e10 as a really really low value
+
+        // just write down SSE
+        log_lik[cp] = (z > 0) ? z/N : 1e10;  // 1e10 as a really really high value
 
         // Backtrack to get breakpoints
         // i is always the oosition of the changepoint to the right (???)
@@ -314,8 +317,8 @@ int main(int argc, char** argv) {
     generic.add_options()
     ("help,?", "show help message")
     ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.bed"), "output file for counts")
-    ("max_bp,m", boost::program_options::value<float>(&conf.max_bp_per_Mb)->default_value(0.5), "maximum number of breakpoints per Mb")
-    ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(20000000), "maximum segment length")
+    ("max_bp,m", boost::program_options::value<float>(&conf.max_bp_per_Mb)->default_value(1), "maximum number of breakpoints per Mb")
+    ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(40000000), "maximum segment length")
     ;
 
     boost::program_options::options_description hidden("Hidden options");
