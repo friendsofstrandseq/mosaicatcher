@@ -38,7 +38,7 @@ BOOSTSOURCES = $(wildcard src/boost/libs/iostreams/include/boost/iostreams/*.hpp
 
 
 # Targets
-TARGETS = .htslib .boost src/main src/calc_bins src/simul
+TARGETS = .htslib .boost src/main src/calc_bins src/simul src/segmentation
 
 all: $(TARGETS)
 
@@ -51,11 +51,17 @@ src/calc_bins: .boost .htslib src/calc_bins.cpp $(wildcard src/*.hpp)
 src/simul: .boost .htslib src/simul.cpp $(wildcard src/*.hpp)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
+src/segmentation: .boost .htslib src/segmentation.cpp
+	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
+
 .htslib: $(HTSLIBSOURCES)
 	cd src/htslib && make && make lib-static && cd ../../ && touch .htslib
 
 .boost: $(BOOSTSOURCES)
 	cd src/boost && ./bootstrap.sh --prefix=${PWD}/src/boost --without-icu --with-libraries=iostreams,filesystem,system,program_options,date_time && ./b2 && ./b2 headers && cd ../../ && touch .boost
+
+doc/html/index.html: doc/Doxyfile
+	cd src && doxygen ../doc/Doxyfile
 
 clean:
 	cd src/htslib && make clean
