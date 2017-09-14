@@ -1,0 +1,85 @@
+cmake_minimum_required (VERSION 3.1)
+set(CMAKE_CXX_STANDARD 11)
+project (Mosaicatcher CXX)
+
+
+include(ExternalProject)
+
+
+### Disable in-source builds
+if("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
+   message(SEND_ERROR "In-source builds are not allowed. Please choose a different build path.")
+endif("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
+
+
+
+### Link Boost
+find_package(Boost 1.50 COMPONENTS system date_time filesystem iostreams program_options REQUIRED)
+include_directories (${Boost_INCLUDE_DIR})
+
+
+
+### Link HTSlib
+
+ExternalProject_Add(htslib
+    PREFIX ${CMAKE_BINARY_DIR}/htslib
+    GIT_REPOSITORY "https://github.com/samtools/htslib.git"
+    GIT_TAG "1.3.1"
+    UPDATE_COMMAND ""
+    BUILD_IN_SOURCE 1
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND make
+    INSTALL_COMMAND make install prefix=${CMAKE_BINARY_DIR}/htslib
+    LOG_DOWNLOAD 1
+)
+#add_dependencies (htslib)
+include_directories (${CMAKE_BINARY_DIR}/htslib)
+
+#include_directories ("htslib")
+
+#file(GLOB SOURCES "${CMAKE_SOURCE_DIR}/htslib/*.h" "${CMAKE_SOURCE_DIR}/htslib/hts.c")
+#list(REMOVE_ITEM SOURCES
+#    "${CMAKE_SOURCE_DIR}/htslib/tabix.c"
+#    "${CMAKE_SOURCE_DIR}/htslib/htsfile.c"
+#    "${CMAKE_SOURCE_DIR}/htslib/bgzip.c"
+#    "${CMAKE_SOURCE_DIR}/htslib/hfile_irods.c"
+#)
+#message(${SOURCES})
+#add_library(hts ${SOURCES})
+#target_link_libraries(hts z pthread)
+
+
+### Set version
+
+# 1. Set Mosaicatcher version
+set (MOSAIC_VERSION_MAJOR 0)
+set (MOSAIC_VERSION_MINOR 1)
+
+# 2. Boost version from find_package (Boost_VERSION)
+
+# 3. Get HTSlib version from git
+execute_process(
+    COMMAND git describe --always --dirty
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/htslib
+    OUTPUT_VARIABLE HTSLIB_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+# 4. write version.hpp file
+configure_file (
+  "${PROJECT_SOURCE_DIR}/version.hpp.in"
+  "${PROJECT_BINARY_DIR}/version.hpp"
+  )
+
+# 5. Include build direcotry so version.hpp can be found
+include_directories("${PROJECT_BINARY_DIR}") # to find version.hpp
+
+
+
+
+ 
+### Add executable
+add_executable (mosaic main.cpp)
+target_link_libraries (mosaic LINK_PUBLIC ${Boost_LIBRARIES})
+target_link_libraries (mosaic LINK_PUBLIC hts)
+
