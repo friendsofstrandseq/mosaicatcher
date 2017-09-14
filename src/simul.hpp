@@ -6,7 +6,7 @@
 #include <random>
 
 #include "intervals.hpp"
-#include "counts.hpp"
+#include "counter.hpp"
 
 using interval::Interval;
 using count::TGenomeCounts;

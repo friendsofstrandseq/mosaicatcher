@@ -11,8 +11,9 @@
 
 //#include <boost/math/distributions/negative_binomial.hpp>
 
+#include "version.hpp"
 #include "intervals.hpp"
-#include "counts.hpp"
+#include "counter.hpp"
 #include "iocounts.hpp"
 #include "simul.hpp"
 
@@ -253,4 +254,5 @@ int main_simulate(int argc, char **argv)
             std::cout << bins[x] << std::endl;
     }
 
+    return 0;
 }

@@ -13,7 +13,7 @@
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 
-#include "counts.hpp"       // Counter
+#include "counter.hpp"       // Counter
 #include "intervals.hpp"    // Interval
 
 

@@ -36,8 +36,9 @@
 #include <boost/iostreams/filter/gzip.hpp>
 #include <htslib/sam.h>
 
+#include "version.hpp"
 #include "intervals.hpp"
-#include "counts.hpp"
+#include "counter.hpp"
 #include "distribution.hpp"
 #include "hmm.hpp"
 #include "iocounts.hpp"

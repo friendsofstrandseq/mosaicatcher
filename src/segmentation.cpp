@@ -13,6 +13,7 @@
 #include <boost/program_options/variables_map.hpp>
 #include <boost/filesystem.hpp>
 
+#include "version.hpp"
 #include "utils.hpp"
 #include "iocounts.hpp"
 

@@ -1,5 +1,5 @@
-#ifndef counts_hpp
-#define counts_hpp
+#ifndef counter_hpp
+#define counter_hpp
 
 #include <htslib/sam.h>
 #include "utils.hpp"
@@ -151,4 +151,4 @@ bool count_sorted_reads(std::string const & filename,
 
 
 }
-#endif /* counts_hpp */
+#endif /* counter_hpp */
