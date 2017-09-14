@@ -1,26 +1,21 @@
 # Processing Strand-seq data
 
-## Installation
+## Installation (beta)
 
-```
-git clone --recursive https://github.com/friendsofstrandseq/mosaicatcher.git
-cd mosaicatcher
-make
-./src/main
-```
+Mosaicatcher can be built using [Cmake](https://cmake.org/) (v3.0). It relies on two external dependecies
 
-If external dependencies ([boost](http://www.boost.org/) >= 1.63 and [HTSlib](https://github.com/samtools/htslib) >= 1.2.1)
-are already installed, you can checkout without `--recursive`. Here is an example using easybuild:
+ * [boost libraries](http://www.boost.org/) >= 1.63 need to be installed on your system
+ * [HTSlib](https://github.com/samtools/htslib) >= 1.3.1. Cmake should be able to install this for you
 
 ```
 git clone https://github.com/friendsofstrandseq/mosaicatcher.git
 cd mosaicatcher
-module load Boost HTSlib
-touch .htslib .boost
+mkdir build
+cd build
+cmake ../src
 make
-./src/main
+./src/mosaic
 ```
-
 
 ## Strand-seq read counting and generation of QC plots
 

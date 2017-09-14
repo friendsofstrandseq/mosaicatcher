@@ -76,6 +76,8 @@ include_directories("${PROJECT_BINARY_DIR}") # to find version.hpp
 
 
 
+### Compiler flags
+add_definitions(-Wall -pedantic -Wno-unknown-pragmas)
 
  
 ### Add executable
