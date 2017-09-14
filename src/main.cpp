@@ -19,9 +19,9 @@ Contact: Sascha Meiers (meiers@embl.de)
 
 #include <htslib/sam.h>
 #include "version.hpp"
-#include "count.cpp"
-#include "segmentation.cpp"
-#include "simul.cpp"
+#include "count.hpp"
+#include "segmentation.hpp"
+#include "simulate.hpp"
 
 int main(int argc, char **argv)
 {

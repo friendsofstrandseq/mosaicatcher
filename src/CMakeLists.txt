@@ -80,8 +80,21 @@ include_directories("${PROJECT_BINARY_DIR}") # to find version.hpp
 add_definitions(-Wall -pedantic -Wno-unknown-pragmas)
 
  
+
+set(HEADER_FILES
+    count.hpp
+    counter.hpp
+    distribution.hpp
+    hmm.hpp
+    intervals.hpp
+    iocounts.hpp
+    program_options.hpp
+    segmentation.hpp
+    simulate.hpp
+    utils.hpp)
+
 ### Add executable
-add_executable (mosaic main.cpp)
+add_executable (mosaic main.cpp ${HEADER_FILES})
 target_link_libraries (mosaic LINK_PUBLIC ${Boost_LIBRARIES})
 target_link_libraries (mosaic LINK_PUBLIC hts)
 
