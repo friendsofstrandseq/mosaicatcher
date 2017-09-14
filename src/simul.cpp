@@ -21,7 +21,7 @@ using interval::Interval;
 using count::TGenomeCounts;
 using count::Counter;
 
-struct Conf {
+struct Conf_simul {
     unsigned n_cells;
     unsigned window;
     boost::filesystem::path f_sv;
@@ -40,11 +40,11 @@ bool file_exists(TString const & fileName)
 }
 
 
-int main(int argc, char **argv)
+int main_simulate(int argc, char **argv)
 {
 
     // Command line options
-    Conf conf;
+    Conf_simul conf;
     boost::program_options::options_description po_generic("Generic options");
     po_generic.add_options()
     ("help,?", "show help message")
@@ -88,8 +88,12 @@ int main(int argc, char **argv)
 
     if (vm.count("help") || !vm.count("sv_config_file") || !file_exists(conf.f_sv.string()))
     {
-    print_usage_and_exit:
-        std::cout << "Usage: " << argv[0] << " [OPTIONS] sv_config_file" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Mosaicatcher " << STRINGIFYMACRO(MOSAIC_VERSION_MAJOR);
+        std::cout << "." << STRINGIFYMACRO(MOSAIC_VERSION_MINOR) << std::endl;
+        std::cout << "> Simulate binned Strand-seq data." << std::endl;
+        std::cout << std::endl;
+        std::cout << "Usage:   " << argv[0] << " [OPTIONS] SV-conf-file" << std::endl << std::endl;
         std::cout << po_visible_options << std::endl;
         std::cout << std::endl;
         std::cout << "Simulate Strand-seq libraries" << std::endl;
@@ -115,7 +119,7 @@ int main(int argc, char **argv)
         std::cout << std::endl;
         std::cout << "SV breakpoints inside a bin are modelled proportionally." << std::endl;
         std::cout << "Strand state annotation ignores SVs" << std::endl;
-        return 1;
+        return vm.count("help") ? 0 : 1;
     }
 
     // Generate bins

@@ -302,7 +302,7 @@ bool calculate_cost_matrix(Matrix<float> const & data,                         /
 }
 
 
-struct Conf {
+struct Conf_segment {
     boost::filesystem::path f_in;
     boost::filesystem::path f_out;
     float max_bp_per_Mb;
@@ -310,9 +310,9 @@ struct Conf {
 };
 
 
-int main(int argc, char** argv) {
+int main_segment(int argc, char** argv) {
 
-    Conf conf;
+    Conf_segment conf;
     boost::program_options::options_description generic("Generic options");
     generic.add_options()
     ("help,?", "show help message")
@@ -341,10 +341,15 @@ int main(int argc, char** argv) {
 
     if (vm.count("help") || !vm.count("input-file")) {
 
-    print_usage_and_exit:
-        std::cout << "Usage: " << argv[0] << " [OPTIONS] count_file.txt.gz" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Mosaicatcher " << STRINGIFYMACRO(MOSAIC_VERSION_MAJOR);
+        std::cout << "." << STRINGIFYMACRO(MOSAIC_VERSION_MINOR) << std::endl;
+        std::cout << "> Find a segmentation across multiple cells." << std::endl;
+        std::cout << std::endl;
+        std::cout << "Usage:   " << argv[0] << " [OPTIONS] counts.txt.gz" << std::endl << std::endl;
         std::cout << visible_options << std::endl;
-        return 1;
+        std::cout << vm.count("help") << std::endl;
+        return vm.count("help") ? 0 : 1;
     }
 
     std::chrono::steady_clock::time_point t1, t2, t3, t4;
@@ -504,6 +509,7 @@ int main(int argc, char** argv) {
         }
 
     }
+    return 0;
 } // main
 
 
