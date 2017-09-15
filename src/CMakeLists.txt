@@ -98,3 +98,18 @@ add_executable (mosaic main.cpp ${HEADER_FILES})
 target_link_libraries (mosaic LINK_PUBLIC ${Boost_LIBRARIES})
 target_link_libraries (mosaic LINK_PUBLIC hts)
 
+
+
+### Doxygen API documentation
+find_package(Doxygen)
+if(DOXYGEN_FOUND)
+    # write version into doxygen file
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/doc/Doxyfile.in ${CMAKE_CURRENT_BINARY_DIR}/doc/Doxyfile @ONLY)
+    add_custom_target(doc ALL
+            COMMAND     ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/doc/Doxyfile
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/doc
+            COMMENT "Generating API documentation with Doxygen" VERBATIM
+            )
+else()
+    message("Need Doxygen to produce API documentation")
+endif(DOXYGEN_FOUND)
