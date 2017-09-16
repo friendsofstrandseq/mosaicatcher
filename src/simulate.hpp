@@ -19,6 +19,62 @@
 #include "counter.hpp"
 #include "iocounts.hpp"
 
+/**
+ * @file
+ * @defgroup simulation Simulation of Strand-seq data
+ *
+ * Summary of how Strand-seq data simulation works
+ *
+ * ## Strand-seq simulation
+ *
+ * The simulation of a single cell contains of three steps:
+ *
+ *   1. Sample basic counts for both haplotypes from a negative binomial distribution
+ *   2. Insert SV according to the user specificaitons onto one of the haplotypes.
+ *   3. Render cell as WW,WC or CC, potentially including SCEs
+ *
+ * ### 1: Basic counts for a cell
+ * First, we randomly select a mean coverage (\f$c\f$) between `minCoverage` and
+ * `maxCoverage` (user-specified) from a uniform distribution.
+ *
+ * Internally, a simulated cell is represented by two haplotypes (`h1`, `h2`), 
+ * which both have reads on the main strand (I call it *plus*), and a few 
+ * abnormal reads that are flipped in orientation (i.e. on the *minus* strand). 
+ *
+ *   * *plus* reads are sampled from a negative binomial with parameters \f$p\f$
+ *     (user-specified) and \f$n = c/2 * p/(1-p)\f$
+ *   * *minus* reads are sampled from a zero-inflated geometric distribution:
+ *     with probability \f$1-\alpha\f$ the bin get 0 reads, otherwise the read
+ *     number is sampled from a geometric distribution
+ *
+ * ### 2: Insertion of SVs
+ * SVs are introduced by changing the *plus* and *minus* counts according to 
+ * what you would excpet from an SV. This can be either done for a single 
+ * haplotype (heterozygous) or both haplotypes (homozygous). Below the changes
+ * to the strands are listed in detail
+ *
+ * SV type      | Haplotype *plus* counts | Haplotype *minus* counts
+ * ---          | ---                     | ---
+ * deletion (het/hom)         | set to 0                | no change
+ * duplication (het/hom)      | multiply by 2           | no change
+ * inversion (het/hom)        | switch with *minus*     | switch with *plus*
+ * inverted duplication (het) | no change               | set to *plus*
+ * false_del (hom)            | divide by 2             | no change
+ *
+ * @todo finish this explanation
+ * 
+ * This is applied to all bins involved in the SV - however, if a bin is only
+ * involved partially, the rule is applied only to a fraction of the counts.
+ *
+ * **Note: For now, heterozygous SV are always introduced on haplotype 1.**
+ *
+ * ### 3: Render cells
+ *
+ * lalala
+ */
+
+
+
 namespace simulator {
 
 
@@ -27,12 +83,21 @@ using count::TGenomeCounts;
 using count::Counter;
 
 
+/**
+ * Save read counts of a single bin for 2 haplotypes, separated by correct
+ * strand (*plus*) and flipped strand (*minus*).
+ *
+ * @ingroup simulation
+ */
 struct HaploCount {
     unsigned h1_plus, h1_minus, h2_plus, h2_minus;
     HaploCount() : h1_plus(0), h1_minus(0), h2_plus(0), h2_minus(0)
     {}
 };
 
+/**
+ * @ingroup simulation
+ */
 enum SV_type {
     het_inv,
     hom_inv,
@@ -44,6 +109,9 @@ enum SV_type {
     false_del
 };
 
+/**
+ * @ingroup simulation
+ */
 struct SV {
     Interval where;
     SV_type type;
@@ -61,77 +129,71 @@ typedef std::vector<HaploCount> THapCount;
 typedef std::vector<std::string> THapType;
 
 
-
-/** Pick a random chromosome, weighted by size of the chromosome
+/**
+ * Turn the list of HaploCount information into Strand-seq data.
+ * @ingroup simulation
  *
- * @param chrom_map sorted list of indices pointing to "bins". chrom_map[3] = 8
- *        means that the first bin of chromosome "3" is bins[8].
- * @param rd generator such as std::mt19937
- */
-/*
-template <typename TRandomGenerator>
-int32_t pick_random_chrom(std::vector<int32_t> chrom_map, TRandomGenerator rd)
-{
-    std::uniform_int_distribution<> rd_chrom(0, chrom_map.back()-1);
-    int32_t rand_bin = rd_chrom(rd);
-    for (int32_t i = 0; i < chrom_map.size(); ++i)
-        if (chrom_map[i] >= rand_bin)
-            return i;
-    return -1;
-}
-*/
-
-
-/** Turn haplotype information into GenomeCounts
+ * Initially we decide for each haplotype on which strand (W or C) it is going
+ * to be inherited. Then, while traversing along the chromosome, there is a 
+ * small chance in every bin that these states change --> this is an SCE.
  *
- * @param hapls table of haplotypes (THapl)
+ * @param hapls Vector of haplotypes (THapl) for each cell, which shall be written as W/C counts.
+ * @param chrom_map Chromosome boarders
+ * @param sce_prob Probabiliy per bin to change strands
+ * @param strand_states Vector of inherited strand states. Note that `Interval`s
+ *        get mis-used by inputting bin numbers instead of chromosomal positions
+ * @return Final Watson/Crick counts that can be plotted.
  */
 TGenomeCounts render_cell(THapCount const & hapls,
                           std::vector<int32_t> const & chrom_map,
                           float sce_prob,
-                          std::vector<unsigned> & sce_positions)
+                          std::vector<std::pair<Interval, std::string>> & strand_states)
 {
     std::random_device rd;
     std::mt19937 rd_gen(rd());
     std::uniform_real_distribution<> rd_unif(0,1);
 
+    // Final counts to be written
     TGenomeCounts counts(chrom_map.back());
 
-    // strand state: 0 = WW, 1 == WC, 2 == CC
-    int state = 1;
-    int32_t chrom = 0;
-    for (unsigned bin = 0; bin < counts.size(); ++bin)
+    // Go through all chromosomes
+    for (int32_t chrom = 0; chrom<chrom_map.size()-1; ++chrom)
     {
-        // at the start of a chromosome: randomly select a strand state
-        if (bin == (unsigned)chrom_map[chrom]) {
-            state = rd_unif(rd_gen) < 0.5 ? (rd_unif(rd_gen) < 0.5 ? 0 : 2) : 1;
-            chrom++;
-        }
+        if (chrom_map[chrom+1] - chrom_map[chrom] < 1) continue;
 
-        // If an SCE occurs, change the state to one of the possible states
-        if (rd_unif(rd_gen) < sce_prob) {
-            if (state == 0 || state == 2) state = 1;
-            else state = rd_unif(rd_gen) < 0.5 ? 0 : 2;
-            sce_positions.push_back(bin);
-        }
+        // strand states for both haplotypes: true = Watson, false = Crick
+        // Initially, choose states with equal prob.
+        bool W_h1 = rd_unif(rd_gen) < 0.5;
+        bool W_h2 = rd_unif(rd_gen) < 0.5;
+        std::string state(W_h1 && W_h2 ? "WW" : (!W_h1 && !W_h2 ? "CC" : "WC"));
 
-        // Now fill bins according to that state
-        if (state == 0) {
-            counts[bin].label = "WW";
-            counts[bin].watson_count = hapls[bin].h1_plus + hapls[bin].h2_plus;
-            counts[bin].crick_count  = hapls[bin].h1_minus + hapls[bin].h2_minus;
+        // Iterate over bins
+        unsigned start_bin = 0;
+        for(unsigned bin = chrom_map[chrom]; bin < chrom_map[chrom+1]; ++bin)
+        {
+            // Small chance of an SCE:
+            if(bin>0 && rd_unif(rd_gen) < sce_prob)
+            {
+                // Write down interval
+                strand_states.push_back(std::make_pair(Interval(chrom, start_bin, bin-1), state));
+                start_bin = bin;
+
+                // change the state of one haplotype
+                if (rd_unif(rd_gen) < 0.5) W_h1 = !W_h1;
+                else                       W_h2 = !W_h2;
+                state = std::string(W_h1?"W":"C") + std::string(W_h2?"W":"C");
+            }
+
+            // Fill counts
+            counts[bin].watson_count = (W_h1  ? hapls[bin].h1_plus : hapls[bin].h1_minus) +
+                                       (W_h2  ? hapls[bin].h2_plus : hapls[bin].h2_minus);
+            counts[bin].crick_count  = (!W_h1 ? hapls[bin].h1_plus : hapls[bin].h1_minus) +
+                                       (!W_h2 ? hapls[bin].h2_plus : hapls[bin].h2_minus);
+
         }
-        if (state == 1) {
-            counts[bin].label = "WC";
-            counts[bin].watson_count = hapls[bin].h1_plus + hapls[bin].h2_minus;
-            counts[bin].crick_count  = hapls[bin].h2_plus + hapls[bin].h1_minus;
-        }
-        if (state == 2) {
-            counts[bin].label = "CC";
-            counts[bin].watson_count = hapls[bin].h1_minus + hapls[bin].h2_minus;
-            counts[bin].crick_count  = hapls[bin].h1_plus + hapls[bin].h2_plus;
-        }
-    }
+        // write down interval
+        strand_states.push_back(std::make_pair(Interval(chrom, start_bin, chrom_map[chrom+1]-1), state));
+    }   
     return counts;
 }
 
@@ -406,7 +468,7 @@ int main_simulate(int argc, char **argv)
     ("help,?", "show help message")
     ("window,w", boost::program_options::value<unsigned>(&conf.window)->default_value(200000)->notifier(in_range(1000,10000000,"window")), "window size of fixed windows")
     ("numcells,n", boost::program_options::value<unsigned>(&conf.n_cells)->default_value(10)->notifier(in_range(0,500,"numcells")), "number of cells to simulate")
-    ("genome,g", boost::program_options::value<boost::filesystem::path>(&conf.f_fai), "Chrom names & lengths. Default: GRch38")
+    ("genome,g", boost::program_options::value<boost::filesystem::path>(&conf.f_fai), "Chrom names & length file. Default: GRch38")
     ;
 
     boost::program_options::options_description po_out("Output options");
@@ -581,14 +643,46 @@ int main_simulate(int argc, char **argv)
     }
 
     // Turn haplotypes into TGenomeCounts and simulate SCEs
-    float sce_prob = (float)conf.sce_num / bins.size();
     std::vector<TGenomeCounts> final_counts;
-    std::vector<unsigned> sces;
-    for (unsigned i = 0; i < conf.n_cells; ++i) {
-        final_counts.push_back(render_cell(haplotypes[i], chrom_map, sce_prob, sces));
+    std::vector<std::pair<Interval,std::string>> str_states;
+    std::vector<unsigned> str_states_cells;
+    for (unsigned i = 0; i < conf.n_cells; ++i)
+    {
+        unsigned cell_pos = str_states.size();
+        final_counts.push_back(render_cell(haplotypes[i],   // simulated counts
+                                           chrom_map,       // chromosome boundaries
+                                           (float)conf.sce_num / bins.size(), // sce_probability
+                                           str_states)); // Intervals with inherited strand states
+        // note down which cells belong to these intervals
+        for (; cell_pos < str_states.size(); ++cell_pos)
+            str_states_cells.push_back(i);
     }
 
-    // Run HMM across data.
+
+    // TODO: Run HMM across data.
+
+
+    // write down SCEs
+    if (vm.count("sceFile"))
+    {
+        std::cout << "[Write] Inherited strand states (SCEs) to file " << conf.f_sce.string() << std::endl;
+        std::ofstream out(conf.f_sce.string());
+        if (out.is_open()) {
+            out << "sample\tcell\tchrom\tstart\tend\tclass" << std::endl;
+            for (unsigned i = 0; i < str_states.size(); ++i) {
+                out << "simulated" << "\t";
+                out << "cell_" << std::to_string(str_states_cells[i]) << "\t";
+                out << chrom_names[str_states[i].first.chr] << "\t";
+                out << bins[(str_states[i].first).start].start << "\t";
+                out << bins[(str_states[i].first).end].end << "\t";
+                out << str_states[i].second << std::endl;
+
+            }
+        } else {
+            std::cerr << "[Warning] Cannot write to " << conf.f_sce.string() << std::endl;
+        }
+    }
+
 
     // write down counts
     std::cout << "[Write] Count table " << conf.f_out.string() << std::endl;
@@ -597,14 +691,6 @@ int main_simulate(int argc, char **argv)
         sample_cell_names.push_back(std::make_pair("simulated", "cell_" + std::to_string(i)));
     }
     io::write_counts_gzip(conf.f_out.string(), final_counts, bins, chrom_names, sample_cell_names);
-
-    // write down SCEs
-    if (vm.count("sceFile")) {
-        std::cout << "[Write] SCE positions to file " << conf.f_sce.string() << std::endl;
-        std::sort(sces.begin(), sces.end());
-        for (auto x : sces)
-            std::cout << bins[x] << std::endl;
-    }
 
     return 0;
 }
