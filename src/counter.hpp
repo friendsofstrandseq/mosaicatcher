@@ -273,6 +273,55 @@ bool count_sorted_reads(std::string const & filename,
 }
 
 
+/**
+ * Calculate mean and var. of all cells of a sample based on `good_bins` only.
+ * @ingroup count
+ *
+ * Calculate mean and variance of reads per bin, but only use `good_bins` (this
+ * make it different from `CellInfo.median_bin_count`). This value is written
+ * into `CellInfo.mean_bin_count` and also appended to `SampleInfo.means`.
+ * The values in `SampleInfo.means` and `SampleInfo.vars` will later be used 
+ * to estimate the *p* parameter of the negative binomial.
+ *
+ * @param samples Map of cell name to sampleInfo --> variables `means` and 
+ *        `vars` are updated.
+ * @param cells List of `CellInfos`, which must have `sample_name` set. Also 
+ *        member `mean_bin_count` will be set, but only for `good_cells`.
+ * @param counts Matrix of raw counts.
+ * @param good_cells Ignore all other cells.
+ * @param good_bins Ignore all other bins. Also cell mean and var. is 
+ *        re-calculated using only good_cells.
+ */
+bool calculate_new_cell_mean(std::unordered_map<std::string, SampleInfo> & samples,
+                           std::vector<CellInfo> & cells,
+                           std::vector<TGenomeCounts> const & counts,
+                           std::vector<unsigned> const & good_cells,
+                           std::vector<unsigned> const & good_bins)
+{
+    // calculate cell means and cell variances, grouped by sample (not cell)
+    for (auto i = good_cells.begin(); i != good_cells.end(); ++i) {
+
+        // Get mean and var for this cell, but only from good bins!
+        TMeanVarAccumulator<float> acc;
+        for (unsigned bini = 0; bini < good_bins.size(); ++bini) {
+            acc(counts[*i][good_bins[bini]].crick_count + counts[*i][good_bins[bini]].watson_count);
+        }
+        // emplace finds key if existing and returns (it,false);
+        // otherwise it inserts (key,value) and returns (it,true).
+        auto it = samples.begin();
+        std::tie(it, std::ignore) = samples.emplace(cells[*i].sample_name, SampleInfo());
+        float cell_mean = boost::accumulators::mean(acc);
+        float cell_var  = boost::accumulators::variance(acc);
+
+        cells[*i].mean_bin_count = cell_mean;
+        (it->second).means.push_back(cell_mean);
+        (it->second).vars.push_back(cell_var);
+    }
+    return true;
+}
+
+
+
 
 } /* namespace */
 #endif /* counter_hpp */

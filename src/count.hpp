@@ -76,6 +76,47 @@ struct Conf {
 };
 
 
+/**
+ *
+ */
+void run_standard_HMM(std::vector<TGenomeCounts> & counts,
+                      std::vector<unsigned> const & good_cells,
+                      std::vector<CellInfo>  & cells,
+                      std::vector<unsigned> const & good_bins,
+                      std::vector<int32_t> const & good_map,
+                      std::unordered_map<std::string, SampleInfo> const & samples,
+                      float p_trans)
+{
+    // Set up and run HMM:
+    hmm::HMM<unsigned, hmm::MultiVariate<hmm::NegativeBinomial> > hmm({"CC", "WC", "WW"});
+    hmm.set_initials({0.3333, 0.3333, 0.3333});
+    hmm.set_transitions({1-2*p_trans, p_trans,     p_trans,    \
+        p_trans,     1-2*p_trans, p_trans,    \
+        p_trans,     p_trans,     1-2*p_trans});
+
+    for (auto i = good_cells.begin(); i != good_cells.end(); ++i)
+    {
+        // set NB(n,p) parameters according to `p` of sample and mean of cell.
+        float p = samples.at(cells[*i].sample_name).p;
+        float n = (float)cells[*i].mean_bin_count / 2 * p / (1-p);
+        float z = 0.15*n; // mean in zero bins
+        cells[*i].nb_p = p;
+        cells[*i].nb_n = n;
+        cells[*i].nb_z = z;
+
+        std::cout << "NB parameters for cell <?>" << ": p=" << p << "\tn=" << n << "\tz=" << z << std::endl;
+
+        hmm.set_emissions( {\
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,  z)}), // CC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,  n)}), // WC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,2*n)})  // WW
+        });
+        run_HMM(hmm, counts[*i], good_bins, good_map);
+    }
+
+}
+
+
 
 
 
@@ -271,23 +312,10 @@ int main_count(int argc, char **argv)
     good_map.push_back((int32_t)good_bins.size());
 
 
-    // calculate cell means and cell variances, grouped by sample (not cell)
-    for (auto i = good_cells.begin(); i != good_cells.end(); ++i) {
 
-        // Get mean and var for this cell, but only from good bins!
-        TMeanVarAccumulator<float> acc;
-        for (unsigned bini = 0; bini < good_bins.size(); ++bini) {
-            acc(counts[*i][good_bins[bini]].crick_count + counts[*i][good_bins[bini]].watson_count);
-        }
-        // emplace finds key if existing and returns (it,false);
-        // otherwise it inserts (key,value) and returns (it,true).
-        auto it = samples.begin();
-        std::tie(it, std::ignore) = samples.emplace(cells[*i].sample_name, SampleInfo());
-        float cell_mean = boost::accumulators::mean(acc);
-        cells[*i].mean_bin_count = cell_mean;
-        (it->second).means.push_back(cell_mean);
-        (it->second).vars.push_back(boost::accumulators::variance(acc));
-    }
+    // calculate cell means and cell variances, grouped by sample (not cell)
+    calculate_new_cell_mean(samples, cells, counts, good_cells, good_bins);
+
 
     // Estimation of parameter p per sample (should work even with one cell only)
     for (auto it = samples.begin(); it != samples.end(); ++it) {
@@ -322,40 +350,13 @@ int main_count(int argc, char **argv)
     // Chapter: Run HMM
     // ================
     //
-
-    // Set up and run HMM:
-    hmm::HMM<unsigned, hmm::MultiVariate<hmm::NegativeBinomial> > hmm({"CC", "WC", "WW"});
-    hmm.set_initials({0.3333, 0.3333, 0.3333});
-
-    // Estimate transition probabilities in the order of 10 SCEs per cell
-    double p_trans = 10.0f / bins.size();
-    hmm.set_transitions({1-2*p_trans, p_trans,     p_trans,   \
-        p_trans,     1-2*p_trans, p_trans,   \
-        p_trans,     p_trans,     1-2*p_trans});
-
-
-    for (auto i = good_cells.begin(); i != good_cells.end(); ++i)
-    {
-        // set NB(n,p) parameters according to `p` of sample and mean of cell.
-        float p = samples[cells[*i].sample_name].p;
-        float n = (float)cells[*i].mean_bin_count / 2 * p / (1-p);
-        float z = 0.15*n; // mean in zero bins
-        cells[*i].nb_p = p;
-        cells[*i].nb_n = n;
-        cells[*i].nb_z = z;
-
-        if (cells[*i].mean_bin_count < 3)
-            std::cerr << "[Warning] Mean bin count is < 3. Try increasing bin size" << std::endl;
-        std::cout << "NB parameters for cell " << conf.f_in[cells[*i].id].stem().string().substr(0,15) << ": p=" << p << "\tn=" << n << "\tz=" << z << std::endl;
-
-        hmm.set_emissions( {\
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,  z)}), // CC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,  n)}), // WC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,2*n)})  // WW
-        });
-        run_HMM(hmm, counts[*i], good_bins, good_map);
-    }
-
+    run_standard_HMM( counts,
+                      good_cells,
+                      cells,
+                      good_bins,
+                      good_map,
+                      samples,
+                      10.0f / bins.size());
 
 
 
