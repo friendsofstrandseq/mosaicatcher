@@ -108,6 +108,19 @@ enum SV_type {
     inv_dup,
     false_del
 };
+    std::string SV_type_to_string(SV_type x) {
+        switch(x) {
+            case het_inv: return ("het_inv");
+            case hom_inv: return ("hom_inv");
+            case het_del: return ("het_del");
+            case hom_del: return ("hom_del");
+            case het_dup: return ("het_dup");
+            case hom_dup: return ("hom_dup");
+            case inv_dup: return ("inv_dup");
+            case false_del: return ("false_del");
+        }
+        return ("?");
+    }
 
 /**
  * @ingroup simulation
@@ -442,6 +455,7 @@ struct Conf_simul {
     boost::filesystem::path f_out;
     boost::filesystem::path f_sce;
     boost::filesystem::path f_fai;
+    boost::filesystem::path f_svs;
 
     double p, min_cov, max_cov, alpha;
     unsigned sce_num;
@@ -475,6 +489,7 @@ int main_simulate(int argc, char **argv)
     po_out.add_options()
     ("out,o",         boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt.gz"), "output count file")
     ("sceFile,S",     boost::program_options::value<boost::filesystem::path>(&conf.f_sce), "output the positions of SCEs")
+    ("variantFile,v", boost::program_options::value<boost::filesystem::path>(&conf.f_svs), "output SVs and which cells they were simulated in")
     ;
 
     boost::program_options::options_description po_rand("Radnomization parameters");
@@ -566,7 +581,7 @@ int main_simulate(int argc, char **argv)
     // Global vars
     std::vector<THapCount> haplotypes;
     std::vector<THapType>  chrom_states;
-    std::vector<CellInfo>  cell_info;
+    std::vector<CellInfo>  cells;
 
     // Generate basic haplotype counts of each cells, including random noise
     std::uniform_real_distribution<> rd_cov(conf.min_cov, conf.max_cov);
@@ -582,6 +597,7 @@ int main_simulate(int argc, char **argv)
 
         CellInfo cell;
         cell.median_bin_count = static_cast<unsigned>(cov_per_bin);
+        cell.sample_name = "simulated";
 
         THapCount count(bins.size());
         for (unsigned bin = 0; bin < bins.size(); ++bin)
@@ -592,7 +608,7 @@ int main_simulate(int argc, char **argv)
             count[bin].h2_minus = (rd_unif(rd_gen)<conf.alpha) ? rd_geom(rd_gen) : 0;
         }
         haplotypes.push_back(std::move(count));
-        cell_info.push_back(std::move(cell));
+        cells.push_back(std::move(cell));
     }
 
 
@@ -604,18 +620,21 @@ int main_simulate(int argc, char **argv)
 
 
     // for each SV
-    std::cout << "--------------------" << std::endl;
+    std::vector<std::pair<Interval,std::pair<std::string, std::string>>> inserted_SVs;
+    std::cout << "Inserting SVs" << std::endl;
     for (SV const & sv : sv_list) {
 
         std::cout << "SV " << chrom_names[sv.where.chr] << ":" << sv.where.start << "-" << sv.where.end << std::endl;
         auto x = simulator::locate_partial_bins(sv.where, bins, chrom_map);
 
-        unsigned cell_counter = 0;
         for (unsigned i = 0; i < haplotypes.size(); ++i) {
 
             // sample carriers
-            if (rd_unif(rd_gen) < sv.vaf) {
-                cell_counter++;
+            if (rd_unif(rd_gen) < sv.vaf)
+            {
+                inserted_SVs.push_back(std::make_pair(sv.where,
+                                                      std::make_pair(SV_type_to_string(sv.type),
+                                                                     std::string("cell_") + std::to_string(i))));
 
                 float fl = x.second.first;
                 float fr = x.second.second;
@@ -639,27 +658,24 @@ int main_simulate(int argc, char **argv)
                 }
             }
         }
-        std::cout << "   in " << cell_counter << " cells" << std::endl;
     }
+
 
     // Turn haplotypes into TGenomeCounts and simulate SCEs
     std::vector<TGenomeCounts> final_counts;
-    std::vector<std::pair<Interval,std::string>> str_states;
+    std::vector<std::pair<Interval,std::string>> strand_states;
     std::vector<unsigned> str_states_cells;
     for (unsigned i = 0; i < conf.n_cells; ++i)
     {
-        unsigned cell_pos = str_states.size();
+        unsigned cell_pos = strand_states.size();
         final_counts.push_back(render_cell(haplotypes[i],   // simulated counts
                                            chrom_map,       // chromosome boundaries
                                            (float)conf.sce_num / bins.size(), // sce_probability
-                                           str_states)); // Intervals with inherited strand states
+                                           strand_states)); // Intervals with inherited strand states
         // note down which cells belong to these intervals
-        for (; cell_pos < str_states.size(); ++cell_pos)
+        for (; cell_pos < strand_states.size(); ++cell_pos)
             str_states_cells.push_back(i);
     }
-
-
-    // TODO: Run HMM across data.
 
 
     // write down SCEs
@@ -669,19 +685,82 @@ int main_simulate(int argc, char **argv)
         std::ofstream out(conf.f_sce.string());
         if (out.is_open()) {
             out << "sample\tcell\tchrom\tstart\tend\tclass" << std::endl;
-            for (unsigned i = 0; i < str_states.size(); ++i) {
+            for (unsigned i = 0; i < strand_states.size(); ++i) {
                 out << "simulated" << "\t";
                 out << "cell_" << std::to_string(str_states_cells[i]) << "\t";
-                out << chrom_names[str_states[i].first.chr] << "\t";
-                out << bins[(str_states[i].first).start].start << "\t";
-                out << bins[(str_states[i].first).end].end << "\t";
-                out << str_states[i].second << std::endl;
+                out << chrom_names[strand_states[i].first.chr] << "\t";
+                out << bins[(strand_states[i].first).start].start << "\t";
+                out << bins[(strand_states[i].first).end].end << "\t";
+                out << strand_states[i].second << std::endl;
 
             }
         } else {
             std::cerr << "[Warning] Cannot write to " << conf.f_sce.string() << std::endl;
         }
     }
+
+
+
+    // Write SV information (especially which cells contain the SVs)
+    if (vm.count("variantFile"))
+    {
+        std::cout << "[Write] Variant summary: " << conf.f_svs.string() << std::endl;
+        std::ofstream out(conf.f_svs.string());
+        if (out.is_open()) {
+            out << "chrom\tstart\tend\tSV_type\tsample\tcell" << std::endl;
+
+            for (auto const & entry : inserted_SVs)
+            {
+                out << chrom_names[entry.first.chr] << "\t";
+                out << entry.first.start << "\t";
+                out << entry.first.end << "\t";
+                out << entry.second.first << "\t";
+                out << "simulated" << "\t";
+                out << entry.second.second << std::endl;
+            }
+        } else {
+            std::cerr << "[Warning] Cannot write to " << conf.f_svs.string() << std::endl;
+        }
+    }
+
+
+    //
+    // Chapter: Filter cells and bins and run HMM
+
+    // median per cell
+    count::set_median_per_cell(final_counts, cells);
+
+    // filter cells with low counts
+    std::vector<unsigned> good_cells;
+    good_cells = count::get_good_cells(final_counts, cells);
+
+    // filter bins with abnormal counts
+    std::vector<unsigned> good_bins(bins.size());
+    std::iota(good_bins.begin(), good_bins.end(), 0); // fill with 0,1,2,...
+
+    // calculate cell means and cell variances, grouped by sample (not cell)
+    std::unordered_map<std::string, SampleInfo> samples;
+    calculate_new_cell_mean(samples, cells, final_counts, good_cells, good_bins);
+
+    // Estimation of parameter p per sample
+    for (auto it = samples.begin(); it != samples.end(); ++it) {
+        SampleInfo & s = it->second;
+        s.p = std::inner_product(s.means.begin(), s.means.end(), s.means.begin(), 0.0f) \
+        / std::inner_product(s.means.begin(), s.means.end(), s.vars.begin(), 0.0f);
+    }
+
+    // Chapter: Run HMM
+    run_standard_HMM(final_counts,
+                     good_cells,
+                     cells,
+                     good_bins,
+                     chrom_map,
+                     samples,
+                     10.0f / bins.size());
+    
+    
+    
+    
 
 
     // write down counts
