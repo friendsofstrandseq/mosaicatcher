@@ -193,7 +193,7 @@ TGenomeCounts render_cell(THapCount const & hapls,
         }
         // write down interval
         strand_states.push_back(std::make_pair(Interval(chrom, start_bin, chrom_map[chrom+1]-1), state));
-    }   
+    }
     return counts;
 }
 

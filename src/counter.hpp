@@ -1,6 +1,8 @@
 #ifndef counter_hpp
 #define counter_hpp
 
+#include <algorithm>
+
 #include <htslib/sam.h>
 #include "utils.hpp"
 #include "intervals.hpp"
@@ -12,6 +14,9 @@ namespace count {
 using interval::Interval;
 
 
+/**
+ * @ingroup count
+ */
 struct Counter {
     //static const std::vector<std::string> label_names;
     //static const std::map<std::string, uint8_t> label_id;
@@ -32,32 +37,151 @@ struct Counter {
     }
 };
 
-
+/**
+ * @ingroup count
+ */
 typedef std::vector<Counter> TGenomeCounts;
 
 
-/** Given count table, calculate median per cell
-  * 
-  * @param counts matrix of counts
-  */
-std::vector<unsigned> median_per_cell(std::vector<TGenomeCounts> & counts)
+/**
+ * Calculate median bin count and return list of cells above.
+ * @ingroup count
+ *
+ * **Important:** `cell.median_per_bin` must have been set beforehands!
+ *
+ * @param counts Matrix witch raw cell counts - labels are set to "None" if cell has too few reads.
+ * @param min_median Cutoff for the minimum median read count (dafault: 3).
+ */
+    std::vector<unsigned> get_good_cells(std::vector<TGenomeCounts> & counts,
+                                         std::vector<CellInfo> & cells,
+                                         unsigned min_median = 3)
 {
-    std::vector<unsigned> median_per_cell(counts.size());
-    for (unsigned i = 0; i < counts.size(); ++i) {
-        TMedianAccumulator<unsigned int> med_acc;
-        for (Counter const & count_bin : counts[i])
-            med_acc(count_bin.watson_count + count_bin.crick_count);
-        median_per_cell[i] = boost::accumulators::median(med_acc);
+    assert(counts.size() == cells.size());
+
+    std::vector<unsigned> good_cells;
+    for (unsigned i=0; i<counts.size(); ++i) {
+        if (cells[i].median_bin_count >= min_median)
+            good_cells.push_back(i);
+        else {
+            cells[i].pass_qc = false;
+            for (unsigned bin=0; bin < counts[i].size(); ++bin)
+                counts[i][bin].set_label("None");
+        }
     }
-    return median_per_cell;
+    return good_cells;
 }
 
 
 /**
- *  count_sorted_reads
- *  ------------------
- *  Count start positions, which are expected to be sorted, into sorted bins.
- *  Suitable for both fixed and variable-width bins.
+ * Write median per cell into CellInfo.
+ * @ingroup count
+ *
+ * @param counts matrix of counts.
+ * @param cells CellInfo to be written.
+ */
+void set_median_per_cell(std::vector<TGenomeCounts> const & counts,
+                         std::vector<CellInfo> & cells)
+{
+    assert(counts.size() == cells.size());
+
+    for (unsigned i = 0; i < counts.size(); ++i) {
+        TMedianAccumulator<unsigned int> med_acc;
+        for (Counter const & count_bin : counts[i])
+            med_acc(count_bin.watson_count + count_bin.crick_count);
+        cells[i].median_bin_count = boost::accumulators::median(med_acc);
+    }
+}
+
+
+
+
+/**
+ * Filter bins across all cells.
+ * @ingroup count
+ *
+ * @param counts Matrix witch raw cell counts.
+ * @param cells Vector of CellInfos.
+ * @param good_cells Ignore all other cells, e.g. the ones with too few reads.
+ */
+std::vector<unsigned> get_good_bins(std::vector<TGenomeCounts> const & counts,
+                                    std::vector<CellInfo> const & cells,
+                                    std::vector<unsigned> const & good_cells)
+{
+    if (counts.size() < 1) return {};
+
+    unsigned N = counts[0].size();
+
+    // Median-Normalized counts
+    std::vector<std::vector<std::tuple<float,float>>> norm_counts(counts.size());
+    for (auto i = good_cells.begin(); i != good_cells.end(); ++i) {
+        norm_counts[*i] = std::vector<std::tuple<float,float>>(N);
+        for (unsigned bin = 0; bin < N; ++bin)
+            norm_counts[*i][bin] = std::make_tuple(counts[*i][bin].watson_count/(float)cells[*i].median_bin_count,
+                                                   counts[*i][bin].crick_count /(float)cells[*i].median_bin_count);
+    }
+
+    // mean + variance per bin
+    std::vector<float> bin_means(N);
+    std::vector<float> bin_variances(N);
+    for (unsigned bin = 0; bin < N; ++bin) {
+        TMeanVarAccumulator<float> meanvar_acc;
+        for (auto i = good_cells.begin(); i != good_cells.end(); ++i)
+            meanvar_acc(std::get<0>(norm_counts[*i][bin]) + std::get<1>(norm_counts[*i][bin]));
+        bin_means[bin]     = boost::accumulators::mean(meanvar_acc);
+        bin_variances[bin] = boost::accumulators::variance(meanvar_acc);
+    }
+
+    // finding good bins
+    // to do: this could be extended by checking if bin is always in WC state!
+    TMeanVarAccumulator<float> meanvar_acc;
+    std::vector<char> reasons(N,'.');
+    std::vector<unsigned> good_bins;
+
+    for (unsigned bin = 0; bin < N; ++bin)
+        meanvar_acc(bin_means[bin]);
+    float mean_mean = boost::accumulators::mean(meanvar_acc);
+    float mean_sd   = std::sqrt(boost::accumulators::variance(meanvar_acc));
+
+    for (unsigned bin = 0; bin < N; ++bin)
+    {
+        if (bin_means[bin] < std::max(0.05f, mean_mean - 4 * mean_sd)) {
+            reasons[bin] = 'l';
+        } else if (bin_means[bin] > mean_mean + 4 * mean_sd) {
+            reasons[bin] = 'h';
+        } else {
+            reasons[bin] = '_';
+            good_bins.push_back(bin);
+        }
+    }
+    std::cout << std::string(reasons.begin(), reasons.end()) << std::endl;
+    return good_bins;
+}
+std::vector<unsigned> get_good_bins(std::vector<TGenomeCounts> const & counts,
+                                    std::vector<CellInfo> const & cells)
+{
+    // When no good_cells where supplied, use all cells
+    std::vector<unsigned> good_cells(counts.size());
+    for (unsigned i=0; i < good_cells.size(); ++i)
+        good_cells[i] = i;
+
+    return get_good_bins(counts, cells, good_cells);
+}
+
+
+
+
+
+
+
+
+
+
+/**
+ * Count reads from BAM file.
+ * @ingroup count
+ *
+ * Count start positions, which are expected to be sorted, into sorted bins.
+ * Suitable for both fixed and variable-width bins.
  */
 bool count_sorted_reads(std::string const & filename,
                         std::vector<Interval> const & bins,
@@ -150,5 +274,5 @@ bool count_sorted_reads(std::string const & filename,
 
 
 
-}
+} /* namespace */
 #endif /* counter_hpp */

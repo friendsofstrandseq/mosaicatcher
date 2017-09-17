@@ -44,6 +44,18 @@
 #include "iocounts.hpp"
 
 
+/**
+ * @file
+ * @defgroup count Bin, count and classify W/C reads.
+ *
+ * Summary of how Strand-seq data is binned, counted and classified.
+ *
+ * ## Strand-seq read counting
+ *
+ * @todo write documentation about counting.
+*/
+
+
 using interval::Interval;
 using count::TGenomeCounts;
 using count::Counter;
@@ -62,6 +74,7 @@ struct Conf {
     unsigned int window;
     std::string mode;
 };
+
 
 
 
@@ -220,152 +233,88 @@ int main_count(int argc, char **argv)
         ++show_progress1;
     }
 
-    // median count per sample
-    for (unsigned i = 0; i < counts.size(); ++i) {
-        TMedianAccumulator<unsigned int> med_acc;
-        for (Counter const & count_bin : counts[i])
-            med_acc(count_bin.watson_count + count_bin.crick_count);
-        cells[i].median_bin_count = boost::accumulators::median(med_acc);
+
+
+
+
+    //
+    // Chapter: Filter cells and bins and estimate NB parameter p
+    // ==========================================================
+    //
+
+    // median per cell
+    count::set_median_per_cell(counts, cells);
+
+    // filter cells with low counts
+    good_cells = count::get_good_cells(counts, cells);
+
+    // filter bins with abnormal counts
+    if (good_cells.size() < 5) {
+        std::cerr << "[Warning] Only few cells with sufficient coverage. I will not filter bad bins" << std::endl;
+        good_bins.resize(bins.size());
+        std::iota(good_bins.begin(), good_bins.end(), 0); // fill with 0,1,2,...
+    } else {
+        good_bins = count::get_good_bins(counts, cells, good_cells);
     }
 
+    // build chrom_map for good bins
+    good_map = std::vector<int32_t>(chrom_map.size() - 1, -1);
+    int32_t pos = 0;
+    for (int32_t chr = 0; chr < static_cast<int32_t>(good_map.size()); ++chr) {
+        while (pos < good_bins.size() && bins[good_bins[pos]].chr < chr)
+            ++pos;
+        // now goodit is either at first occurence of chr, or at the end.
+        if (pos >= good_bins.size()) good_map[chr] = (int32_t)good_bins.size();
+        else good_map[chr] = pos;
+    }
+    // add last element for easy calculation of number of bins
+    good_map.push_back((int32_t)good_bins.size());
 
-    //
-    // Chapter: Select cells with enough coverage
-    // ==========================================
-    //
-    for (unsigned i=0; i<counts.size(); ++i) {
-        if (cells[i].median_bin_count >= 3)
-            good_cells.push_back(i);
-        else {
-            cells[i].pass_qc = false;
-            for (unsigned bin=0; bin < bins.size(); ++bin)
-                counts[i][bin].set_label("None");
+
+    // calculate cell means and cell variances, grouped by sample (not cell)
+    for (auto i = good_cells.begin(); i != good_cells.end(); ++i) {
+
+        // Get mean and var for this cell, but only from good bins!
+        TMeanVarAccumulator<float> acc;
+        for (unsigned bini = 0; bini < good_bins.size(); ++bini) {
+            acc(counts[*i][good_bins[bini]].crick_count + counts[*i][good_bins[bini]].watson_count);
+        }
+        // emplace finds key if existing and returns (it,false);
+        // otherwise it inserts (key,value) and returns (it,true).
+        auto it = samples.begin();
+        std::tie(it, std::ignore) = samples.emplace(cells[*i].sample_name, SampleInfo());
+        float cell_mean = boost::accumulators::mean(acc);
+        cells[*i].mean_bin_count = cell_mean;
+        (it->second).means.push_back(cell_mean);
+        (it->second).vars.push_back(boost::accumulators::variance(acc));
+    }
+
+    // Estimation of parameter p per sample (should work even with one cell only)
+    for (auto it = samples.begin(); it != samples.end(); ++it) {
+        SampleInfo & s = it->second;
+        s.p = std::inner_product(s.means.begin(), s.means.end(), s.means.begin(), 0.0f) \
+        / std::inner_product(s.means.begin(), s.means.end(), s.vars.begin(), 0.0f);
+    }
+
+    // Write sample information to file
+    if (vm.count("sample_info")) {
+        std::cout << "[Write] sample information: " << conf.f_sample_info.string() << std::endl;
+        std::ofstream out(conf.f_sample_info.string());
+        if (out.is_open()) {
+            out << "sample\tcells\tp\tmeans\tvars" << std::endl;
+            for (auto it = samples.begin(); it != samples.end(); ++it) {
+                SampleInfo const & s = it->second;
+                out << it->first << "\t" << s.means.size() << "\t" << s.p << "\t" << s.means[0];
+                for (unsigned k=1; k<s.means.size(); ++k) out << "," << s.means[k];
+                out << "\t" << s.vars[0];
+                for (unsigned k=1; k<s.vars.size(); ++k) out << "," << s.vars[k];
+                out << std::endl;
+            }
+        } else {
+            std::cerr << "[Warning] Cannot write to " << conf.f_sample_info.string() << std::endl;
         }
     }
 
-
-    //
-    // Chapter: Remove bad bins & estimate NB parameter p
-    // ==================================================
-    //
-    {
-        // Median-Normalized counts
-        std::vector<std::vector<std::tuple<float,float>>> norm_counts(counts.size());
-        for (auto i = good_cells.begin(); i != good_cells.end(); ++i) {
-            norm_counts[*i] = std::vector<std::tuple<float,float>>(bins.size());
-            for (unsigned bin = 0; bin < bins.size(); ++bin)
-                norm_counts[*i][bin] = std::make_tuple(counts[*i][bin].watson_count/(float)cells[*i].median_bin_count,
-                                                       counts[*i][bin].crick_count /(float)cells[*i].median_bin_count);
-        }
-
-        // mean + variance per bin
-        std::vector<float> bin_means(bins.size());
-        std::vector<float> bin_variances(bins.size());
-        for (unsigned bin = 0; bin < bins.size(); ++bin) {
-            TMeanVarAccumulator<float> meanvar_acc;
-            for (auto i = good_cells.begin(); i != good_cells.end(); ++i)
-                meanvar_acc(std::get<0>(norm_counts[*i][bin]) + std::get<1>(norm_counts[*i][bin]));
-            bin_means[bin]     = boost::accumulators::mean(meanvar_acc);
-            bin_variances[bin] = boost::accumulators::variance(meanvar_acc);
-        }
-
-        // finding good bins
-        // to do: this could be extended by checking if bin is always in WC state!
-        TMeanVarAccumulator<float> meanvar_acc;
-        std::vector<char> bad_bins;
-        for (unsigned bin = 0; bin < bins.size(); ++bin)
-            meanvar_acc(bin_means[bin]);
-        float my_mean = boost::accumulators::mean(meanvar_acc);
-        float my_sd   = std::sqrt(boost::accumulators::variance(meanvar_acc));
-        std::cout << "Mean mean bin count is " << my_mean << std::endl;
-        std::cout << "mean bin count SD is "   << my_sd << std::endl;
-        for (unsigned bin = 0; bin < bins.size(); ++bin)
-            if (bin_means[bin] > 0.01 && bin_means[bin] < my_mean + 3*my_sd)
-                good_bins.push_back(bin);
-            else
-                bad_bins.push_back(bin_means[bin] <= 0.01 ? 'l' : 'h');
-        std::cout << "Filtering " << bins.size() - good_bins.size() << " bins." << std::endl;
-
-
-        // Write removed bins to bed file
-        if (vm.count("removed_bins")) {
-            std::cout << "[Write] removed bins: " << conf.f_removed_bins.string() << std::endl;
-            std::ofstream out(conf.f_removed_bins.string());
-            if (out.is_open()) {
-                auto goodit = good_bins.begin();
-                auto badit  = bad_bins.begin();
-                for (unsigned bin = 0; bin < bins.size(); ++bin) {
-                    if(goodit == good_bins.end() || bin < *goodit) {
-                        out << hdr->target_name[bins[bin].chr] << "\t" << bins[bin].start << "\t" << bins[bin].end << "\t" << *badit++ << std::endl;
-                    } else {
-                        if (goodit != good_bins.end()) goodit++;
-                    }
-                }
-                assert(badit == bad_bins.end());
-            } else {
-                std::cerr << "[Warning] Cannot write to " << conf.f_removed_bins.string() << std::endl;
-            }
-        }
-
-
-        // build chrom_map for good bins
-        good_map = std::vector<int32_t>(hdr->n_targets, -1);
-        int32_t pos = 0;
-        for (int32_t chr = 0; chr < hdr->n_targets; ++chr) {
-            while (pos < good_bins.size() && bins[good_bins[pos]].chr < chr)
-                ++pos;
-            // now goodit is either at first occurence of chr, or at the end.
-            if (pos >= good_bins.size()) good_map[chr] = (int32_t)good_bins.size();
-            else good_map[chr] = pos;
-        }
-        // add last element for easy calculation of number of bins
-        good_map.push_back((int32_t)good_bins.size());
-
-
-        // calculate cell means and cell variances, grouped by sample (not cell)
-        for (auto i = good_cells.begin(); i != good_cells.end(); ++i) {
-
-            // Get mean and var for this cell, but only from good bins!
-            TMeanVarAccumulator<float> acc;
-            for (unsigned bini = 0; bini < good_bins.size(); ++bini) {
-                acc(counts[*i][good_bins[bini]].crick_count + counts[*i][good_bins[bini]].watson_count);
-            }
-            // emplace finds key if existing and returns (it,false);
-            // otherwise it inserts (key,value) and returns (it,true).
-            auto it = samples.begin();
-            std::tie(it, std::ignore) = samples.emplace(cells[*i].sample_name, SampleInfo());
-            float cell_mean = boost::accumulators::mean(acc);
-            cells[*i].mean_bin_count = cell_mean;
-            (it->second).means.push_back(cell_mean);
-            (it->second).vars.push_back(boost::accumulators::variance(acc));
-        }
-
-        // Estimation of parameter p per sample (should work even with one cell only)
-        for (auto it = samples.begin(); it != samples.end(); ++it) {
-            SampleInfo & s = it->second;
-            s.p = std::inner_product(s.means.begin(), s.means.end(), s.means.begin(), 0.0f) \
-            / std::inner_product(s.means.begin(), s.means.end(), s.vars.begin(), 0.0f);
-        }
-
-        // Write sample information to file
-        if (vm.count("sample_info")) {
-            std::cout << "[Write] sample information: " << conf.f_sample_info.string() << std::endl;
-            std::ofstream out(conf.f_sample_info.string());
-            if (out.is_open()) {
-                out << "sample\tcells\tp\tmeans\tvars" << std::endl;
-                for (auto it = samples.begin(); it != samples.end(); ++it) {
-                    SampleInfo const & s = it->second;
-                    out << it->first << "\t" << s.means.size() << "\t" << s.p << "\t" << s.means[0];
-                    for (unsigned k=1; k<s.means.size(); ++k) out << "," << s.means[k];
-                    out << "\t" << s.vars[0];
-                    for (unsigned k=1; k<s.vars.size(); ++k) out << "," << s.vars[k];
-                    out << std::endl;
-                }
-            } else {
-                std::cerr << "[Warning] Cannot write to " << conf.f_sample_info.string() << std::endl;
-            }
-        }
-    }
 
 
 
