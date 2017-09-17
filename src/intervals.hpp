@@ -11,10 +11,25 @@
 namespace interval {
 
 
+/**
+ * @file
+ * @defgroup interval Binning the genome
+ * Summary of how the genome is binned.
+ *
+ * ### Overview of binning strategies
+ *
+ */
 
-// BED interval: 0-based, right-exclusive
+
+
+/**
+ * BED interval (0-based, right-exclusive)
+ * @ingroup interval
+ *
+ * Interval has a `less` operator and an `operator<<` for pringing.
+ */
 struct Interval {
-    int32_t chr;
+    int32_t chr;  /**< chromosome id, which typically refers to `chrom_names` */
     int32_t start;
     int32_t end;
     Interval() : chr(0), start(0), end(0) {}
@@ -42,11 +57,19 @@ std::ostream &operator<<(std::ostream &out, Interval const & bin)
 
 
 
-/** Given a list of genomic intervals, check that they are non-overlapping
- * and calculate `chrom_map` (pointers to first interval of each chromosome
+/** 
+ * Calculate the chromosome index.
+ * @ingroup interval
  *
+ * Given a list of genomic intervals, check that they are non-overlapping
+ * and calculate `chrom_map`. This contains indices of the first bin of each
+ * chromosome. Input Intervals need to be sorted and non-overlapping
+ *
+ * @return false if Intervals overlap each other or are not sorted. Otherwise true.
  * @param intervals **sorted** list of bed intervals
- * @param chrom_map vector of chromosome numbers. Must have correct size.
+ * @param chrom_map Vector to write `chrom_map`. Must be resized to the numnber 
+ *                  of chromosomes (e.g. `hdr->n_targets` or 
+ *                 `chrom_names.size()`) beforehands.
  */
 bool make_chrom_map(std::vector<Interval> const & intervals,
                     std::vector<int32_t> & chrom_map) {
@@ -56,7 +79,7 @@ bool make_chrom_map(std::vector<Interval> const & intervals,
     for (unsigned i=0; i<intervals.size(); ++i) {
         if (intervals[i].chr == prev) {
             if (intervals[i-1].end > intervals[i].start) {
-                std::cerr << "Intervals overlap. This is not supported!" << std::endl;
+                std::cerr << "[Error] Intervals overlap. This is not supported!" << std::endl;
                 return false;
             }
         } else {
@@ -74,17 +97,19 @@ bool make_chrom_map(std::vector<Interval> const & intervals,
 
 
 
-/** read_dynamic_bins
-  *
-  * read bed file. Sort intervals by chrom, start. Check they don't overlap.
-  * return sorted bin vector plus a chrom_map that stores first bin number
-  * of each tid
-  *
-  * @param intervals vector of intervals to be written (initially empty)
-  * @param chrom_map vector of chromosome numbers. Must have correct size.
-  * @param filename BED file name
-  * @param hdr BAM header needed to know number of chromosomes and tids.
-  */
+/** 
+ * Read intervals from a BED file and create chrom_map.
+ * @ingroup interval
+ *
+ * Intervals are read using `read_exclude_file`, sorted and checked for overlaps
+ * by `make_chrom_map`.
+ *
+ * @return true if file could be read and intervals are correct.
+ * @param intervals vector of intervals to be written (initially empty)
+ * @param chrom_map vector of chromosome numbers. Must have correct size.
+ * @param filename BED file name
+ * @param hdr BAM header needed to know number of chromosomes and tids.
+ */
 template <typename TFilename>
 bool read_dynamic_bins(std::vector<Interval> & intervals,
                        std::vector<int32_t> & chrom_map,
@@ -109,35 +134,36 @@ bool read_dynamic_bins(std::vector<Interval> & intervals,
 
 
 
-/** Create fixed-width bed intervals along the genome
-  *
-  * When regions are excluded bins can be truncated on the right end and
-  * new bins always start at the last base of the exclude interval.
-  *
-  * Note that I removed the dependency on BAM hdrs from this function. I
-  * should also do this for the other functions in this file.
-  *
-  * @param intervals vector of intervals to be written (initially empty)
-  * @param chrom_map vector of chromosome numbers. Must have correct size
-  * @param binwidth obviously, the size of the bins
-  * @param excl list of intervals to be exlcuded
-  * @param n_targets number of chromosomes
-  * @param target_len list of chromosome lengths, e.g. hdr->target_len
-  */
+/** 
+ * Create fixed-width intervals along the genome.
+ * @ingroup interval
+ *
+ * When regions are excluded (via `exlc`), bins always start exactly at the 
+ * right end of the exclude interval. The last bin of a chromosome (or before
+ * another exclude interval) can be trucated on the right.
+ *
+ * @return true if all worked out
+ * @param intervals Vector of intervals to be written (initially empty).
+ * @param chrom_map Vector of chromosome numbers. Will be resized to `n_chrom`.
+ * @param binwidth Size of the bins
+ * @param excl List of intervals to be exlcuded.
+ * @param n_chrom Number of chromosomes.
+ * @param target_len List of chromosome lengths, e.g. `hdr->target_len`.
+ */
 template <typename TVec>
 bool create_fixed_bins(std::vector<Interval> & intervals,
                        std::vector<int32_t> & chrom_map,
                        unsigned binwidth,
                        std::vector<Interval> const & excl,
-                       int32_t n_targets,
+                       int32_t n_chrom,
                        TVec const & target_len)
 {
     auto excl_iter = excl.begin();
 
-    for (int32_t chrom=0; chrom<n_targets; ++chrom)
+    for (int32_t chrom=0; chrom < n_chrom; ++chrom)
     {
         // store chrom-pointer in chrom_map
-        chrom_map[chrom] = (int32_t)intervals.size();
+        chrom_map[chrom] = static_cast<int32_t>(intervals.size());
 
         // skip excl. chromosomes "left" of this one
         while(excl_iter != excl.end() && excl_iter->chr < chrom)
@@ -180,6 +206,13 @@ bool create_fixed_bins(std::vector<Interval> & intervals,
 
 
 
+/**
+ * Read a BED file.
+ * @ingroup interval
+ *
+ * @param filename Filename.
+ * @param intervals List of `Intervals` to be written.
+ */
 bool read_exclude_file(std::string const & filename, bam_hdr_t* hdr, std::vector<Interval> & intervals)
 {
     std::ifstream interval_file(filename.c_str(), std::ifstream::in);
@@ -225,6 +258,8 @@ bool read_exclude_file(std::string const & filename, bam_hdr_t* hdr, std::vector
     }
     return true;
 }
+
+
 
 
 
