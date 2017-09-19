@@ -6,6 +6,7 @@
 #include <vector>
 #include <random>
 #include <utility>
+#include <chrono>
 
 #include <boost/program_options/cmdline.hpp>
 #include <boost/program_options/options_description.hpp>
@@ -273,60 +274,6 @@ inline void flip_strand(HaploCount & h, SV_type sv_type, float f = 1)
 
 
 
-/** Given genomic coordinates, find the start and end bins (inclusive)
- *
- * such that bin.start <= pos <= bin.end is true for both start and end
- * coordinate of `where`.
- *
- * @param where Interval of SV.
- * @param bins Chromosmal bins (sorted).
- * @param chrom_map Mapping to first bin of each chromosome.
- */
-inline std::pair<int32_t, int32_t> locate_bins(Interval const & where,
-                                               std::vector<Interval> const & bins,
-                                               std::vector<int32_t> const & chrom_map)
-{
-    // Get bins
-    float start = std::upper_bound(bins.begin(), bins.end(), Interval(where.chr, where.start, where.start)) - bins.begin() - 1;
-    float end   = std::lower_bound(bins.begin(), bins.end(), Interval(where.chr, where.end,   where.end)) - bins.begin() - 1;
-
-    assert(bins[start].chr == where.chr);
-    assert(bins[start].start <= where.start && bins[start].end >= where.start);
-    assert(bins[end].chr == where.chr);
-    assert(bins[end].end >= where.end && bins[end].end >= where.start);
-
-    return std::make_pair(start, end);
-}
-
-inline float left_frac(Interval const & bin, int32_t pos) {
-    assert(pos >= bin.start);
-    assert(pos <= bin.end);
-    assert(bin.end > bin.start);
-    return (float)(pos - bin.start) / (bin.end - bin.start);
-}
-
-inline float right_frac(Interval const & bin, int32_t pos) {
-    assert(pos >= bin.start);
-    assert(pos <= bin.end);
-    assert(bin.end > bin.start);
-    return (float)(bin.end - pos) / (bin.end - bin.start);
-}
-
-
-inline std::pair<std::pair<int32_t,int32_t>, std::pair<float,float>> locate_partial_bins(
-                                                                                         Interval const & where,
-                                                                                         std::vector<Interval> const & bins,
-                                                                                         std::vector<int32_t> const & chrom_map)
-{
-    // Get bins
-    std::pair<std::pair<int32_t,int32_t>, std::pair<float,float>> tuple;
-    tuple.first = locate_bins(where, bins, chrom_map);
-    // determine the portion of the bins that are within the SV:
-    // right_frac of start bin, and left_frac of end bin
-    tuple.second = std::make_pair(right_frac(bins[tuple.first.first], where.start),
-                                  left_frac(bins[tuple.first.second], where.end));
-    return tuple;
-}
 
 
 
@@ -442,13 +389,110 @@ bool read_SV_config_file(std::string const & filename,
     return true;
 }
 
+
+
+
+/**
+ * Insert SVs onto haplotype counts.
+ * @ingroup simulator
+ *
+ * This function does a couple of steps at the same time **for each SV**:
+ *    * smaple which cells are supposed to carry the SV with a probability
+ *      of *vaf* for each cell (this is probabilistic, so the actual number can
+ *      differ from the expected vaf).
+ *    * Insert SV onto haplotypes (currently just on h1), including
+ *      *fractional bins* at the ends.
+ *    * Note down ids of cell carrying the SV into `inserted_SVs` (refers to 
+ *      `cells`).
+ *    * Calculate `optimal_breakpoints`, which are **always the right end of the
+ *      bins**. The bin adapts to the left or right if the real SV breakpoint
+ *      is < or > 50% of the bin.
+ *
+ * @param haplotypes Haplotype Counts that will be edited according to `flip_strands`.
+ * @param inserted_SVs List of SVs and carriers that are inserted into haplotypes (initially empty).
+ * @param cells List of `CellInfo`, which include cell and sample names etc.
+ * @param optimal_breakpoints Set of optimal bin positions (e.g. optimal segmentation).
+ * @param sv_list List of SVs to be inserted.
+ * @param bins List of Intervals (bins) across the genome.
+ * @param rd_gen Just pass the random generator here to flip a coin for each carrier.
+ */
+template <typename TRandomGenerator>
+void simulate_SVs(std::vector<THapCount> & haplotypes,
+                  std::vector<std::vector<unsigned>> & inserted_SVs,
+                  std::set<unsigned> & optimal_breakpoints,
+                  std::vector<SV> const & sv_list,
+                  std::vector<Interval> const & bins,
+                  std::vector<int32_t> const & chrom_map,
+                  TRandomGenerator & rd_gen)
+{
+    // Need a uniform dist. to sample carriers of the SV.
+    std::uniform_real_distribution<> rd_unif(0,1);
+
+    // Prepare entries in inserted_SVs for each SV
+    inserted_SVs.resize(sv_list.size());
+
+    for (unsigned j = 0; j < sv_list.size(); ++j)
+    {
+        // SV position in bin coordinates
+        SV const & sv = sv_list[j];
+        auto   sv_bins = interval::locate_partial_bins(sv.where, bins, chrom_map);
+        int32_t   binl = sv_bins.first.first;
+        int32_t   binr = sv_bins.first.second;
+        float       fl = sv_bins.second.first;
+        float       fr = sv_bins.second.second;
+
+        // Try for each cell
+        for (unsigned i = 0; i < haplotypes.size(); ++i)
+        {
+            if (rd_unif(rd_gen) < sv.vaf)
+            {
+                // List which cells got which SV.
+                inserted_SVs[j].push_back(i);
+
+                // There is only one bin --> fraction is fl - (1-fr)
+                if (binl == binr)
+                {
+                    flip_strand(haplotypes[i][binl], sv.type, fl - (1-fr));
+                    optimal_breakpoints.insert(binl); // right
+                    if (binl > chrom_map[sv.where.chr])
+                        optimal_breakpoints.insert(binl-1); // left
+
+                } else {
+
+                    // Partially flip first bin
+                    flip_strand(haplotypes[i][binl], sv.type, fl);
+                    if (fl > 0.5 && binl > chrom_map[sv.where.chr]) // left
+                        optimal_breakpoints.insert(binl-1);
+                    else
+                        optimal_breakpoints.insert(binl);
+
+                    // Partially flip last bin
+                    flip_strand(haplotypes[i][binr], sv.type, fr);
+                    if (fr < 0.5 && binr > chrom_map[sv.where.chr]) // right
+                        optimal_breakpoints.insert(binr-1);
+                    else
+                        optimal_breakpoints.insert(binr);
+
+                    // Completely flip all bins in between
+                    for (unsigned bin = binl+1; bin < binr; ++bin) {
+                        flip_strand(haplotypes[i][bin], sv.type);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+
+
 } /* namespace */
 
 
 
-
-
 struct Conf_simul {
+    bool verbose;
     unsigned n_cells;
     unsigned window;
     boost::filesystem::path f_sv;
@@ -456,6 +500,7 @@ struct Conf_simul {
     boost::filesystem::path f_sce;
     boost::filesystem::path f_fai;
     boost::filesystem::path f_svs;
+    boost::filesystem::path f_segment;
 
     double p, min_cov, max_cov, alpha;
     unsigned sce_num;
@@ -480,6 +525,7 @@ int main_simulate(int argc, char **argv)
     boost::program_options::options_description po_generic("Generic options");
     po_generic.add_options()
     ("help,?", "show help message")
+    ("verbose,v", "tell me more")
     ("window,w", boost::program_options::value<unsigned>(&conf.window)->default_value(200000)->notifier(in_range(1000,10000000,"window")), "window size of fixed windows")
     ("numcells,n", boost::program_options::value<unsigned>(&conf.n_cells)->default_value(10)->notifier(in_range(0,500,"numcells")), "number of cells to simulate")
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&conf.f_fai), "Chrom names & length file. Default: GRch38")
@@ -489,7 +535,8 @@ int main_simulate(int argc, char **argv)
     po_out.add_options()
     ("out,o",         boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt.gz"), "output count file")
     ("sceFile,S",     boost::program_options::value<boost::filesystem::path>(&conf.f_sce), "output the positions of SCEs")
-    ("variantFile,v", boost::program_options::value<boost::filesystem::path>(&conf.f_svs), "output SVs and which cells they were simulated in")
+    ("variantFile,V", boost::program_options::value<boost::filesystem::path>(&conf.f_svs), "output SVs and which cells they were simulated in")
+    ("segmentFile,U", boost::program_options::value<boost::filesystem::path>(&conf.f_segment), "output optimal segmentation according to SVs and SCEs.")
     ;
 
     boost::program_options::options_description po_rand("Radnomization parameters");
@@ -516,6 +563,8 @@ int main_simulate(int argc, char **argv)
     boost::program_options::variables_map vm;
     boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(po_cmdline_options).positional(po_positional).run(), vm);
     boost::program_options::notify(vm);
+
+    conf.verbose = vm.count("verbose");
 
     if (vm.count("help") || !vm.count("sv_config_file") || !file_exists(conf.f_sv.string()))
     {
@@ -545,15 +594,21 @@ int main_simulate(int argc, char **argv)
     }
 
 
+    std::chrono::steady_clock::time_point t1, t2;
 
-    // Read genome or use GRch38 by default
+    // global vars
     std::vector<Interval>       bins;
     std::vector<int32_t>        chrom_map;
     std::vector<int32_t>        chrom_sizes;
     std::vector<std::string>    chrom_names;
+    std::vector<THapCount>      haplotypes;
+    std::vector<THapType>       chrom_states;
+    std::vector<CellInfo>       cells;
 
+    // Read genome or use GRch38 by default
     if (vm.count("genome")) {
-        std::cerr << "Feature: read genome file is not implemented" << std::endl;
+        std::cerr << "[Error]: reading a genome file is not implemented. Leave out this flag to use GRch38" << std::endl;
+        return 2;
     } else {
         chrom_sizes = { \
             248956422, 242193529, 198295559, 190214555,
@@ -578,17 +633,14 @@ int main_simulate(int argc, char **argv)
     std::random_device rd;
     std::mt19937 rd_gen(rd());
 
-    // Global vars
-    std::vector<THapCount> haplotypes;
-    std::vector<THapType>  chrom_states;
-    std::vector<CellInfo>  cells;
 
     // Generate basic haplotype counts of each cells, including random noise
+    t1 = std::chrono::steady_clock::now();
     std::uniform_real_distribution<> rd_cov(conf.min_cov, conf.max_cov);
     std::uniform_real_distribution<> rd_unif(0,1);
     double p = conf.p;
 
-    std::cout << "Simulating  " << conf.n_cells << " cells" << std::endl;
+    if (conf.verbose) std::cout << "Simulating  " << conf.n_cells << " cells" << std::endl;
     for (unsigned i = 0; i < conf.n_cells; ++i)
     {
         double cov_per_bin = rd_cov(rd_gen);
@@ -598,6 +650,7 @@ int main_simulate(int argc, char **argv)
         CellInfo cell;
         cell.median_bin_count = static_cast<unsigned>(cov_per_bin);
         cell.sample_name = "simulated";
+        cell.cell_name = std::string("cell_") + std::to_string(i);
 
         THapCount count(bins.size());
         for (unsigned bin = 0; bin < bins.size(); ++bin)
@@ -613,55 +666,81 @@ int main_simulate(int argc, char **argv)
 
 
     // SV part
-
-    // Make sure that intervals are within bounds now!!
     std::vector<SV> sv_list;
     read_SV_config_file(conf.f_sv.string(), chrom_names, chrom_sizes, sv_list);
 
+    // Insert SVs
+    std::vector<std::vector<unsigned>> inserted_SVs;
+    std::set<unsigned> optimal_breakpoints;
+    simulate_SVs(haplotypes,
+                 inserted_SVs,
+                 optimal_breakpoints,
+                 sv_list,
+                 bins,
+                 chrom_map,
+                 rd_gen);
 
-    // for each SV
-    std::vector<std::pair<Interval,std::pair<std::string, std::string>>> inserted_SVs;
-    std::cout << "Inserting SVs" << std::endl;
-    for (SV const & sv : sv_list) {
 
-        std::cout << "SV " << chrom_names[sv.where.chr] << ":" << sv.where.start << "-" << sv.where.end << std::endl;
-        auto x = simulator::locate_partial_bins(sv.where, bins, chrom_map);
+    t2 = std::chrono::steady_clock::now();
+    auto time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+    if (conf.verbose) std::cout << "[Info] Simulation took " << time.count() << " sec." << std::endl;
 
-        for (unsigned i = 0; i < haplotypes.size(); ++i) {
 
-            // sample carriers
-            if (rd_unif(rd_gen) < sv.vaf)
+    // Write SV information (especially which cells contain the SVs)
+    if (vm.count("variantFile"))
+    {
+        std::cout << "[Write] Variant summary: " << conf.f_svs.string() << std::endl;
+        std::ofstream out(conf.f_svs.string());
+        if (out.is_open())
+        {
+            out << "chrom\tstart\tend\tSV_type\tsample\tcell" << std::endl;
+            for (unsigned j = 0; j < sv_list.size(); ++j)
             {
-                inserted_SVs.push_back(std::make_pair(sv.where,
-                                                      std::make_pair(SV_type_to_string(sv.type),
-                                                                     std::string("cell_") + std::to_string(i))));
-
-                float fl = x.second.first;
-                float fr = x.second.second;
-
-                if (x.first.first == x.first.second) {
-
-                    // There is only one bin
-                    flip_strand(haplotypes[i][x.first.first], sv.type, fl - (1-fr));
-                } else {
-
-                    // Partially flip first bin
-                    flip_strand(haplotypes[i][x.first.first], sv.type, fl);
-
-                    // Partially flip last bin
-                    flip_strand(haplotypes[i][x.first.second], sv.type, fr);
-
-                    // Completely flip all bins in between
-                    for (unsigned bin = x.first.first+1; bin < x.first.second; ++bin) {
-                        flip_strand(haplotypes[i][bin], sv.type);
-                    }
+                SV const & sv = sv_list[j];
+                for (unsigned carrier_id : inserted_SVs[j])
+                {
+                    out << chrom_names[sv.where.chr] << "\t";
+                    out << sv.where.start << "\t" << sv.where.end << "\t";
+                    out << SV_type_to_string(sv.type) << "\t";
+                    out << cells[carrier_id].sample_name << "\t";
+                    out << cells[carrier_id].cell_name << std::endl;
                 }
             }
+        } else {
+            std::cerr << "[Warning] Cannot write to " << conf.f_svs.string() << std::endl;
         }
     }
 
+    // Update optimal_breakpoints by one breakpoint at the end of each chrom.
+    for (int32_t chrom = 1; chrom < chrom_map.size(); ++chrom)
+        optimal_breakpoints.insert(chrom_map[chrom]-1);
+
+
+    // Write optimal segmentation file, which includes SV breakpoints and SCE breakpoints.
+    if (vm.count("segmentFile"))
+    {
+        std::cout << "[Write] Segmentation file: " << conf.f_segment.string() << std::endl;
+        std::ofstream out(conf.f_segment.string());
+        if (out.is_open())
+        {
+            out << "k\tchrom\tbps" << std::endl;
+            for (auto const & bin : optimal_breakpoints)
+            {
+                int32_t chrom = std::upper_bound(chrom_map.begin(), chrom_map.end(), bin) - chrom_map.begin() -1;
+                out << 0 << "\t" << chrom_names[chrom] << "\t";
+                out << bin - chrom_map[chrom] << std::endl;
+            }
+        } else {
+            std::cerr << "[Warning] Cannot write to " << conf.f_segment.string() << std::endl;
+        }
+    }
+    
+
+
+
 
     // Turn haplotypes into TGenomeCounts and simulate SCEs
+    t1 = std::chrono::steady_clock::now();
     std::vector<TGenomeCounts> final_counts;
     std::vector<std::pair<Interval,std::string>> strand_states;
     std::vector<unsigned> str_states_cells;
@@ -676,6 +755,10 @@ int main_simulate(int argc, char **argv)
         for (; cell_pos < strand_states.size(); ++cell_pos)
             str_states_cells.push_back(i);
     }
+    t2 = std::chrono::steady_clock::now();
+    time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+    if (conf.verbose) std::cout << "[Info] Rendering cells took " << time.count() << " sec." << std::endl;
+
 
 
     // write down SCEs
@@ -692,7 +775,6 @@ int main_simulate(int argc, char **argv)
                 out << bins[(strand_states[i].first).start].start << "\t";
                 out << bins[(strand_states[i].first).end].end << "\t";
                 out << strand_states[i].second << std::endl;
-
             }
         } else {
             std::cerr << "[Warning] Cannot write to " << conf.f_sce.string() << std::endl;
@@ -700,32 +782,10 @@ int main_simulate(int argc, char **argv)
     }
 
 
-
-    // Write SV information (especially which cells contain the SVs)
-    if (vm.count("variantFile"))
-    {
-        std::cout << "[Write] Variant summary: " << conf.f_svs.string() << std::endl;
-        std::ofstream out(conf.f_svs.string());
-        if (out.is_open()) {
-            out << "chrom\tstart\tend\tSV_type\tsample\tcell" << std::endl;
-
-            for (auto const & entry : inserted_SVs)
-            {
-                out << chrom_names[entry.first.chr] << "\t";
-                out << entry.first.start << "\t";
-                out << entry.first.end << "\t";
-                out << entry.second.first << "\t";
-                out << "simulated" << "\t";
-                out << entry.second.second << std::endl;
-            }
-        } else {
-            std::cerr << "[Warning] Cannot write to " << conf.f_svs.string() << std::endl;
-        }
-    }
-
-
     //
     // Chapter: Filter cells and bins and run HMM
+
+    t1 = std::chrono::steady_clock::now();
 
     // median per cell
     count::set_median_per_cell(final_counts, cells);
@@ -757,7 +817,10 @@ int main_simulate(int argc, char **argv)
                      chrom_map,
                      samples,
                      10.0f / bins.size());
-    
+
+    t2 = std::chrono::steady_clock::now();
+    time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+    if (conf.verbose) std::cout << "[Info] Running HMM took " << time.count() << " sec." << std::endl;
     
     
     

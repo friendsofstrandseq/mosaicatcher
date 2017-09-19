@@ -104,7 +104,7 @@ void run_standard_HMM(std::vector<TGenomeCounts> & counts,
         cells[*i].nb_n = n;
         cells[*i].nb_z = z;
 
-        std::cout << "NB parameters for cell <?>" << ": p=" << p << "\tn=" << n << "\tz=" << z << std::endl;
+        //std::cout << "NB parameters for cell <?>" << ": p=" << p << "\tn=" << n << "\tz=" << z << std::endl;
 
         hmm.set_emissions( {\
             hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,  z)}), // CC

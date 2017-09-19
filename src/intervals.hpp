@@ -13,7 +13,7 @@ namespace interval {
 
 /**
  * @file
- * @defgroup interval Binning the genome
+ * @defgroup interval Intervals along the genome
  * Summary of how the genome is binned.
  *
  * ### Overview of binning strategies
@@ -257,6 +257,85 @@ bool read_exclude_file(std::string const & filename, bam_hdr_t* hdr, std::vector
         return false;
     }
     return true;
+}
+
+
+
+
+/**
+ * Find (inclusive) start and end bins of an interval.
+ * @ingroup interval
+ *
+ * Such that `bin.start` *<=* `pos` *<=* `bin.end` is true for both start and 
+ * end coordinate of `where`.
+ *
+ * @return Pair of indices referring to the `bins` vector.
+ * @param where Interval of SV.
+ * @param bins Chromosmal bins (sorted).
+ * @param chrom_map Mapping to first bin of each chromosome.
+ */
+inline std::pair<int32_t, int32_t> locate_bins(Interval const & where,
+                                               std::vector<Interval> const & bins,
+                                               std::vector<int32_t> const & chrom_map)
+{
+    // Get bins
+    int start = std::upper_bound(bins.begin(), bins.end(), Interval(where.chr, where.start, where.start)) - bins.begin() - 1;
+    int end   = std::lower_bound(bins.begin(), bins.end(), Interval(where.chr, where.end,   where.end)) - bins.begin() - 1;
+
+    assert(bins[start].chr == where.chr);
+    assert(bins[start].start <= where.start && bins[start].end >= where.start);
+    assert(bins[end].chr == where.chr);
+    assert(bins[end].end >= where.end && bins[end].end >= where.start);
+
+    return std::make_pair(start, end);
+}
+
+inline float _left_frac(Interval const & bin, int32_t pos) {
+    assert(pos >= bin.start);
+    assert(pos <= bin.end);
+    assert(bin.end > bin.start);
+    return (float)(pos - bin.start) / (bin.end - bin.start);
+}
+
+inline float _right_frac(Interval const & bin, int32_t pos) {
+    assert(pos >= bin.start);
+    assert(pos <= bin.end);
+    assert(bin.end > bin.start);
+    return (float)(bin.end - pos) / (bin.end - bin.start);
+}
+
+
+/**
+ * Find (inclusive) start and end bins of an interval plus fractions.
+ * @ingroup interval
+ *
+ * Like `locate_bins` but also report what fraction of start and end bins
+ * are inside the SV. A fraction of close to 1 means that this bin is nearly 
+ * completely part of the SV. The first fraction refers to the right part of 
+ * the start bin, the second fraction refers to the left part of the end bin.
+ *
+ * **Note:** When start bin == end bin, then the SV is completely inside a 
+ * single bin. The SV covers then a total fraction of \f$f = f_1 - (1-f_2)$ of
+ * that bin.
+ *
+ * @return Pair of indices + pair of fractions referring to the `bins` vector.
+ * @param where Interval of SV.
+ * @param bins Chromosmal bins (sorted).
+ * @param chrom_map Mapping to first bin of each chromosome.
+ */
+inline std::pair<std::pair<int32_t,int32_t>, std::pair<float,float>>
+    locate_partial_bins(Interval const & where,
+                        std::vector<Interval> const & bins,
+                        std::vector<int32_t> const & chrom_map)
+{
+    // Get bins
+    std::pair<std::pair<int32_t,int32_t>, std::pair<float,float>> tuple;
+    tuple.first = locate_bins(where, bins, chrom_map);
+    // determine the portion of the bins that are within the SV:
+    // right_frac of start bin, and left_frac of end bin
+    tuple.second = std::make_pair(_right_frac(bins[tuple.first.first], where.start),
+                                  _left_frac(bins[tuple.first.second], where.end));
+    return tuple;
 }
 
 

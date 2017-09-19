@@ -42,6 +42,7 @@ struct CellInfo {
     unsigned median_bin_count;      /* raw counts */
     float mean_bin_count;           /* after removal of bad bins */
     std::string sample_name;
+    std::string cell_name;
     int32_t id;                     /* position in conf.f_in */
     float nb_p, nb_n, nb_z;         /* NB parameters */
     bool pass_qc;                   /* set to false if no (good) SS library */
