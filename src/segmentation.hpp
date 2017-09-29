@@ -319,7 +319,7 @@ int main_segment(int argc, char** argv) {
     ("help,?", "show help message")
     ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.bed"), "output file for counts")
     ("max_bp,m", boost::program_options::value<float>(&conf.max_bp_per_Mb)->default_value(1), "maximum number of breakpoints per Mb")
-    ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(40000000), "maximum segment length")
+    ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(100000000), "maximum segment length")
     ;
 
     boost::program_options::options_description hidden("Hidden options");
