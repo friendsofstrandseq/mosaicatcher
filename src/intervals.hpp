@@ -114,14 +114,15 @@ template <typename TFilename>
 bool read_dynamic_bins(std::vector<Interval> & intervals,
                        std::vector<int32_t> & chrom_map,
                        TFilename const & filename,
-                       bam_hdr_t* hdr)
+                       bam_hdr_t* hdr,
+                       bool verbose = 0)
 {
     // read intervals
-    if (!read_exclude_file(filename, hdr, intervals))
+    if (!read_exclude_file(filename, hdr, intervals, verbose))
         return false;
 
-    if (intervals.size()<1) {
-        std::cerr << "No intervals" << std::endl;
+    if (intervals.empty()) {
+        std::cerr << "[Error] No intervals in file" << std::endl;
         return false;
     }
 
@@ -213,7 +214,7 @@ bool create_fixed_bins(std::vector<Interval> & intervals,
  * @param filename Filename.
  * @param intervals List of `Intervals` to be written.
  */
-bool read_exclude_file(std::string const & filename, bam_hdr_t* hdr, std::vector<Interval> & intervals)
+bool read_exclude_file(std::string const & filename, bam_hdr_t* hdr, std::vector<Interval> & intervals, bool verbose = 0)
 {
     std::ifstream interval_file(filename.c_str(), std::ifstream::in);
     if (interval_file.is_open()) {
@@ -236,24 +237,24 @@ bool read_exclude_file(std::string const & filename, bam_hdr_t* hdr, std::vector
                     } else {
                         ivl.start = boost::lexical_cast<int32_t>(*tokIter++);
                         if (tokIter == tokens.end()) {
-                            std::cerr << "Warning: Invalid line: " << line << std::endl;
+                            std::cerr << "[Warning] Invalid line: " << line << std::endl;
                             continue;
                         }
                         ivl.end   = boost::lexical_cast<int32_t>(*tokIter++);
                         if (ivl.end <= ivl.start) {
-                            std::cerr << "Warning: Invalid line: " << line << std::endl;
+                            std::cerr << "[Warning] Invalid line: " << line << std::endl;
                             continue;
                         }
                     }
                     intervals.push_back(ivl);
                 } else {
-                    std::cerr << "Warning: Chromosome not found: " << chrName << std::endl;
+                    if (verbose) std::cerr << "[Warning] Unknown chromosome " << chrName << " in file " << filename << std::endl;
                 }
             }
         }
         interval_file.close();
     } else {
-        std::cerr << "Error: BED file cannot be read: " << filename << std::endl;
+        std::cerr << "[Error] BED file cannot be read: " << filename << std::endl;
         return false;
     }
     return true;

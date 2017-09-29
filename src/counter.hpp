@@ -105,7 +105,8 @@ void set_median_per_cell(std::vector<TGenomeCounts> const & counts,
  */
 std::vector<unsigned> get_good_bins(std::vector<TGenomeCounts> const & counts,
                                     std::vector<CellInfo> const & cells,
-                                    std::vector<unsigned> const & good_cells)
+                                    std::vector<unsigned> const & good_cells,
+                                    bool verbose = 0)
 {
     if (counts.size() < 1) return {};
 
@@ -153,7 +154,7 @@ std::vector<unsigned> get_good_bins(std::vector<TGenomeCounts> const & counts,
             good_bins.push_back(bin);
         }
     }
-    std::cout << std::string(reasons.begin(), reasons.end()) << std::endl;
+    //std::cout << std::string(reasons.begin(), reasons.end()) << std::endl;
     return good_bins;
 }
 std::vector<unsigned> get_good_bins(std::vector<TGenomeCounts> const & counts,

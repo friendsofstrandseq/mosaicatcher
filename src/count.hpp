@@ -129,6 +129,7 @@ int main_count(int argc, char **argv)
     boost::program_options::options_description generic("Generic options");
     generic.add_options()
     ("help,?", "show help message")
+    ("verbose,v", "Be more verbose in the output")
     ("mapq,q", boost::program_options::value<int>(&conf.minMapQual)->default_value(10), "min mapping quality")
     ("window,w", boost::program_options::value<unsigned int>(&conf.window)->default_value(500000), "window size of fixed windows")
     ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt.gz"), "output file for counts and strand state (gz)")
@@ -158,11 +159,11 @@ int main_count(int argc, char **argv)
 
     // Check command line arguments
     if (!vm["window"].defaulted() && vm.count("bins")) {
-        std::cerr << "Error: -w and -b cannot be specified together" << std::endl << std::endl;
+        std::cerr << "[Error] -w and -b cannot be specified together" << std::endl << std::endl;
         goto print_usage_and_exit;
     }
     if (vm.count("bins") && vm.count("exclude")) {
-        std::cerr << "Error: Exclude chromosomes (-x) have no effect when -b is specified. Stop" << std::endl << std::endl;
+        std::cerr << "[Error] Exclude chromosomes (-x) have no effect when -b is specified. Stop" << std::endl << std::endl;
         goto print_usage_and_exit;
     }
 
@@ -213,7 +214,7 @@ int main_count(int argc, char **argv)
 
     // Read sample names from headers.
     // Keep one header throughout the program.
-    std::cout << "Exploring SAM headers..." << std::endl;
+    if (vm.count("verbose")) std::cout << "[Info] Exploring SAM headers..." << std::endl;
     for(unsigned i = 0; i < conf.f_in.size(); ++i)
     {
         cells[i].id = (int32_t)i;
@@ -236,23 +237,31 @@ int main_count(int argc, char **argv)
     chrom_map = std::vector<int32_t>(hdr->n_targets, -1);
     if (vm.count("bins"))
     {
-        if (!read_dynamic_bins(bins, chrom_map, conf.f_bins.string().c_str(), hdr))
+        if (!read_dynamic_bins(bins,
+                               chrom_map,
+                               conf.f_bins.string().c_str(),
+                               hdr))
             return 1;
         TMedianAccumulator<unsigned> med_acc;
         for (Interval const & b : bins)
             med_acc(b.end - b.start);
         median_binsize = boost::accumulators::median(med_acc);
-        std::cout << "Reading " << bins.size() << " variable-width bins with median bin size of " << round(median_binsize/1000) << "kb" << std::endl;
+        if (vm.count("verbose")) std::cout << "[Info] Reading " << bins.size() << " variable-width bins with median bin size of " << round(median_binsize/1000) << "kb" << std::endl;
     }
     else
     {
         std::vector<Interval> exclude;
         if (vm.count("exclude")) {
-            read_exclude_file(conf.f_excl.string(), hdr, exclude);
+            read_exclude_file(conf.f_excl.string(), hdr, exclude, vm.count("verbose"));
             sort(exclude.begin(), exclude.end(), interval::less);
         }
-        std::cout << "Creating " << round(conf.window/1000) << "kb bins with " << exclude.size() << " excluded regions" << std::endl;
-        create_fixed_bins(bins, chrom_map, conf.window, exclude, hdr->n_targets, hdr->target_len);
+        if (vm.count("verbose")) std::cout << "[Info] Creating " << round(conf.window/1000) << "kb bins with " << exclude.size() << " excluded regions" << std::endl;
+        create_fixed_bins(bins,
+                          chrom_map,
+                          conf.window,
+                          exclude,
+                          hdr->n_targets,
+                          hdr->target_len);
         median_binsize = conf.window;
     }
     // add last element for easy calculation of number of bins
@@ -261,11 +270,18 @@ int main_count(int argc, char **argv)
 
     // Count in bins. If A bam file cannot be read, the cell is ignored and
     //     the respective entry in `counts` and `cells` will be erased.
-    std::cout << "Reading " << conf.f_in.size() <<  " BAM files...";
+    if (vm.count("verbose")) std::cout << "[Info] Reading " << conf.f_in.size() <<  " BAM files...";
     boost::progress_display show_progress1(conf.f_in.size());
     for (unsigned i = 0, i_f = 0; i_f < conf.f_in.size(); ++i, ++i_f)
     {
-        if (!count_sorted_reads(conf.f_in[i_f].string(), bins, chrom_map, hdr, conf.minMapQual, counts[i], cells[i])) {
+        if (!count_sorted_reads(conf.f_in[i_f].string(),
+                                bins,
+                                chrom_map,
+                                hdr,
+                                conf.minMapQual,
+                                counts[i],
+                                cells[i]))
+        {
             std::cerr << "[Warning] Ignoring cell " << conf.f_in[i_f].string() << std::endl;
             counts.erase(counts.begin()+i);
             cells.erase(cells.begin()+i);
@@ -296,6 +312,7 @@ int main_count(int argc, char **argv)
         std::iota(good_bins.begin(), good_bins.end(), 0); // fill with 0,1,2,...
     } else {
         good_bins = count::get_good_bins(counts, cells, good_cells);
+        if (vm.count("verbose")) std::cout << "[Info] Filtered out " << bins.size() - good_bins.size() << " bad bins" << std::endl;
     }
 
     // build chrom_map for good bins
@@ -326,7 +343,7 @@ int main_count(int argc, char **argv)
 
     // Write sample information to file
     if (vm.count("sample_info")) {
-        std::cout << "[Write] sample information: " << conf.f_sample_info.string() << std::endl;
+        if (vm.count("verbose")) std::cout << "[Write] sample information: " << conf.f_sample_info.string() << std::endl;
         std::ofstream out(conf.f_sample_info.string());
         if (out.is_open()) {
             out << "sample\tcells\tp\tmeans\tvars" << std::endl;
@@ -363,7 +380,7 @@ int main_count(int argc, char **argv)
 
     // Print cell information:
     if (vm.count("info")) {
-        std::cout << "[Write] Cell summary: " << conf.f_info.string() << std::endl;
+        if (vm.count("verbose")) std::cout << "[Write] Cell summary: " << conf.f_info.string() << std::endl;
         std::ofstream out(conf.f_info.string());
         if (out.is_open()) {
             out << "# sample:  Sample (has multiple cells)" << std::endl;
