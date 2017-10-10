@@ -55,7 +55,7 @@ template <typename TMat> void print_mat(TMat const & G) {
 }
 
 /**
- * @fn bool optimal_segment_dp(Matrix<float> const & cost, int max_cp, Matrix<int> & breakpoints, std::vector<float> & log_lik)
+ * @fn bool optimal_segment_dp(Matrix<float> const & cost, int max_cp, Matrix<int> & breakpoints, std::vector<float> & sse)
  * @ingroup segmentation
  * Find optimal segmentation based on a cost matrix.
  *  
@@ -75,12 +75,12 @@ template <typename TMat> void print_mat(TMat const & G) {
  * @param cost Cost matrix (see `calculate_cost_matrix`)
  * @param max_cp Maximum number of breakpoints (<= N)
  * @param breakpoints Breakpoints for k=1..max_cp will be written in here
- * @param log_lik Something similar to BIC is written in here. Might be useful for model selection.
+ * @param sse Something similar to BIC is written in here. Might be useful for model selection.
  */
 bool optimal_segment_dp(Matrix<float> const & cost,
                   int max_cp,
                   Matrix<int> & breakpoints,
-                  std::vector<float> & log_lik)
+                  std::vector<float> & sse)
 {
     // Determine max_k and N from cost matrix
     unsigned max_k  = (unsigned)cost.size();
@@ -146,17 +146,15 @@ bool optimal_segment_dp(Matrix<float> const & cost,
 
     // breakpoints: Row cp contains the breakpoints for a segmentation with cp breakpoints.
     // breakpoints[cp][cp] is always N
-    log_lik     = std::vector<float>(max_cp);
+    sse     = std::vector<float>(max_cp);
     breakpoints = Matrix<int>(max_cp, std::vector<int>(max_cp, -1)); // important: initialize to -1
 
     for (unsigned cp = 0; cp < max_cp; ++cp)
     {
-        /* Calculate J, the log-likelihood. */
-        float z = dp[N-1][cp];
-        //log_lik[cp] = (z > 0) ? -(float)N / 2.0 * (1 + log(2*M_PI) + log(z / N)) : -1e10;  // 1e10 as a really really low value
-
         // just write down SSE
-        log_lik[cp] = (z > 0) ? z/N : 1e10;  // 1e10 as a really really high value
+        float z = dp[N-1][cp];
+        //sse[cp] = (z > 0) ? -(float)N / 2.0 * (1 + log(2*M_PI) + log(z / N)) : -1e10;  // 1e10 as a really really low value
+        sse[cp] = (z > 0) ? z/N : 1e10;  // 1e10 as a really really high value
 
         // Backtrack to get breakpoints
         // i is always the oosition of the changepoint to the right (???)
@@ -409,7 +407,7 @@ int main_segment(int argc, char** argv) {
 
     // OUTPUT file
     std::ofstream out(conf.f_out.string());
-    out << "k\tlogLik\tbreakpoint\tchrom\tstart\tend" << std::endl;
+    out << "k\tsse\tbreakpoint\tchrom\tstart\tend" << std::endl;
 
     // Segmentation chromosome per chromosome
     // This loop can later be parallelized
@@ -482,8 +480,8 @@ int main_segment(int argc, char** argv) {
         // Find optimal segmentation
         t1 = std::chrono::steady_clock::now();
         Matrix<int> breakpoints;
-        std::vector<float> log_lik;
-        if (!optimal_segment_dp(new_cost, max_cp, breakpoints, log_lik))
+        std::vector<float> sse;
+        if (!optimal_segment_dp(new_cost, max_cp, breakpoints, sse))
             std::cerr << "[ERROR] Segmentation failed" << std::endl;
         t2 = std::chrono::steady_clock::now();
         std::cout << "    Optimal segmentation (" << max_cp << " x " << N << ") took " << std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count() << " seconds." << std::endl;
@@ -496,7 +494,7 @@ int main_segment(int argc, char** argv) {
             for (unsigned cp = 0; cp < max_cp; ++cp) {
                 for (unsigned k = 0; k <= cp; ++k) {
                     out << cp+1 << "\t";
-                    out << log_lik[cp] << "\t";
+                    out << sse[cp] << "\t";
                     out << breakpoints[cp][k] << "\t";
                     out << chromosomes[chrom] << "\t";
                     unsigned from = k==0 ? 0 : breakpoints[cp][k-1];
