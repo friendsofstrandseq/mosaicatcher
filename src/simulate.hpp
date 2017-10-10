@@ -45,33 +45,40 @@
  *   * *plus* reads are sampled from a negative binomial with parameters \f$p\f$
  *     (user-specified) and \f$n = c/2 * p/(1-p)\f$
  *   * *minus* reads are sampled from a zero-inflated geometric distribution:
- *     with probability \f$1-\alpha\f$ the bin get 0 reads, otherwise the read
+ *     with probability \f$1-\alpha\f$ the bin gets 0 reads, otherwise the read
  *     number is sampled from a geometric distribution
  *
  * ### 2: Insertion of SVs
+ * SVs are specified in a config file and their start and end positions do **not
+ * need to align with bins**.
+ *
  * SVs are introduced by changing the *plus* and *minus* counts according to 
- * what you would excpet from an SV. This can be either done for a single 
+ * what you would expect from an SV. This can be either done for a single
  * haplotype (heterozygous) or both haplotypes (homozygous). Below the changes
  * to the strands are listed in detail
  *
- * SV type      | Haplotype *plus* counts | Haplotype *minus* counts
- * ---          | ---                     | ---
- * deletion (het/hom)         | set to 0                | no change
- * duplication (het/hom)      | multiply by 2           | no change
- * inversion (het/hom)        | switch with *minus*     | switch with *plus*
- * inverted duplication (het) | no change               | set to *plus*
- * false_del (hom)            | divide by 2             | no change
+ * SV type         | Haplotype *plus* counts | Haplotype *minus* counts
+ * ---             | ---                     | ---
+ * deletion  *HET* / *HOM*)     | set to 0                | no change
+ * duplication (*HET* / *HOM*)  | multiply by 2           | no change
+ * inversion (*HET* / *HOM*)    | switch with *minus*     | switch with *plus*
+ * inverted duplication (*HET*) | no change               | set to *plus*
+ * false_del (*HOM*)            | divide by 2             | no change
  *
- * @todo finish this explanation
- * 
- * This is applied to all bins involved in the SV - however, if a bin is only
- * involved partially, the rule is applied only to a fraction of the counts.
+ * > For now, heterozygous SV are **always introduced on haplotype 1**. In *HET*
+ * > SVs the aforementioned changes are applied only to haplotype 1, in *HOM*
+ * > SVs to both haplotypes.
  *
- * **Note: For now, heterozygous SV are always introduced on haplotype 1.**
+ * The changes are applied to all bins involved in the SV. However, if a bin is
+ * only involved partially, the rule is applied only to a fraction of the
+ * counts.
+ *
  *
  * ### 3: Render cells
  *
- * lalala
+ * At the last step, haplotypes are "inherited" as either Watson or Crick
+ * strands. This is randomly chosen for each chromosome so that on average we
+ * will obtain a 25:50:25 ratio of WW:WC:CC chromosomes.
  */
 
 
@@ -142,6 +149,12 @@ struct SV {
 typedef std::vector<HaploCount> THapCount;
 typedef std::vector<std::string> THapType;
 
+struct phased_counts {
+    uint8_t h1_w;
+    uint8_t h1_c;
+    uint8_t h2_w;
+    uint8_t h2_c;
+};
 
 /**
  * Turn the list of HaploCount information into Strand-seq data.
@@ -151,17 +164,28 @@ typedef std::vector<std::string> THapType;
  * to be inherited. Then, while traversing along the chromosome, there is a 
  * small chance in every bin that these states change --> this is an SCE.
  *
+ * **Update**: Now this function also simulates phased reads for both
+ * haplotypes, which are drawn from a binomial distribution using `phased_frac`
+ * as a probability.
+ *
  * @param hapls Vector of haplotypes (THapl) for each cell, which shall be written as W/C counts.
  * @param chrom_map Chromosome boarders
  * @param sce_prob Probabiliy per bin to change strands
  * @param strand_states Vector of inherited strand states. Note that `Interval`s
  *        get mis-used by inputting bin numbers instead of chromosomal positions
+ * @param phases Empty vector of `phased_counts` which will be filled to the
+ *        same size as the returned `TGenomeCounts` with counts of haplotypes
+ *        H1 and H2 on Watson and Crick strands. This simulates phase data.
+ * @param phased_frac Fraction of reads that can be phased (used in binomial
+ *        distribution).
  * @return Final Watson/Crick counts that can be plotted.
  */
 TGenomeCounts render_cell(THapCount const & hapls,
                           std::vector<int32_t> const & chrom_map,
                           float sce_prob,
-                          std::vector<std::pair<Interval, std::string>> & strand_states)
+                          std::vector<std::pair<Interval, std::string>> & strand_states,
+                          std::vector<phased_counts> & phases,
+                          float phased_frac = 0.1)
 {
     std::random_device rd;
     std::mt19937 rd_gen(rd());
@@ -169,6 +193,7 @@ TGenomeCounts render_cell(THapCount const & hapls,
 
     // Final counts to be written
     TGenomeCounts counts(chrom_map.back());
+    phases.resize(chrom_map.back());
 
     // Go through all chromosomes
     for (int32_t chrom = 0; chrom<chrom_map.size()-1; ++chrom)
@@ -204,7 +229,23 @@ TGenomeCounts render_cell(THapCount const & hapls,
             counts[bin].crick_count  = (!W_h1 ? hapls[bin].h1_plus : hapls[bin].h1_minus) +
                                        (!W_h2 ? hapls[bin].h2_plus : hapls[bin].h2_minus);
 
+            // Simulate phased reads (for each read there is a small chance to be phased)
+            if (W_h1) {
+                phases[bin].h1_w = std::binomial_distribution<>(hapls[bin].h1_plus, phased_frac)(rd_gen);
+                phases[bin].h1_c = std::binomial_distribution<>(hapls[bin].h1_minus, phased_frac)(rd_gen);
+            } else {
+                phases[bin].h1_c = std::binomial_distribution<>(hapls[bin].h1_plus, phased_frac)(rd_gen);
+                phases[bin].h1_w = std::binomial_distribution<>(hapls[bin].h1_minus, phased_frac)(rd_gen);
+            }
+            if (W_h2) {
+                phases[bin].h2_w = std::binomial_distribution<>(hapls[bin].h2_plus, phased_frac)(rd_gen);
+                phases[bin].h2_c = std::binomial_distribution<>(hapls[bin].h2_minus, phased_frac)(rd_gen);
+            } else {
+                phases[bin].h2_c = std::binomial_distribution<>(hapls[bin].h2_plus, phased_frac)(rd_gen);
+                phases[bin].h2_w = std::binomial_distribution<>(hapls[bin].h2_minus, phased_frac)(rd_gen);
+            }
         }
+
         // write down interval
         strand_states.push_back(std::make_pair(Interval(chrom, start_bin, chrom_map[chrom+1]-1), state));
     }
@@ -497,12 +538,13 @@ struct Conf_simul {
     unsigned window;
     boost::filesystem::path f_sv;
     boost::filesystem::path f_out;
+    boost::filesystem::path f_phases;
     boost::filesystem::path f_sce;
     boost::filesystem::path f_fai;
     boost::filesystem::path f_svs;
     boost::filesystem::path f_segment;
 
-    double p, min_cov, max_cov, alpha;
+    double p, min_cov, max_cov, alpha, phased_frac;
     unsigned sce_num;
 };
 
@@ -534,6 +576,7 @@ int main_simulate(int argc, char **argv)
     boost::program_options::options_description po_out("Output options");
     po_out.add_options()
     ("out,o",         boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt.gz"), "output count file")
+    ("phases,P",      boost::program_options::value<boost::filesystem::path>(&conf.f_phases), "output phased reads into a file")
     ("sceFile,S",     boost::program_options::value<boost::filesystem::path>(&conf.f_sce), "output the positions of SCEs")
     ("variantFile,V", boost::program_options::value<boost::filesystem::path>(&conf.f_svs), "output SVs and which cells they were simulated in")
     ("segmentFile,U", boost::program_options::value<boost::filesystem::path>(&conf.f_segment), "output optimal segmentation according to SVs and SCEs.")
@@ -546,6 +589,7 @@ int main_simulate(int argc, char **argv)
     ("maxCoverage,C", boost::program_options::value<double>(&conf.max_cov)->default_value(60)->notifier(in_range(1,500,"maxCoverage")), "max. read coverage per bin")
     ("alpha,a",       boost::program_options::value<double>(&conf.alpha)->default_value(0.1,"0.1")->notifier(in_range(0,1,"alpha")), "noise added to all bins: mostly 0, but for a fraction alpha drawn from geometrix distribution")
     ("scesPerCell,s", boost::program_options::value<unsigned>(&conf.sce_num)->default_value(4)->notifier(in_range(0,20,"scesPerCell")), "Average number of SCEs per cell")
+    ("phasedFraction,z", boost::program_options::value<double>(&conf.phased_frac)->default_value(0.1)->notifier(in_range(0,1,"scesPerCell")), "Average number of SCEs per cell")
     ;
 
     boost::program_options::options_description po_hidden("Hidden options");
@@ -581,7 +625,7 @@ int main_simulate(int argc, char **argv)
             std::cout << "and sister chromatid exchange events (SCEs). Type, size, position and" << std::endl;
             std::cout << "frequency of SVs are specified by a config file. To not include SVs" << std::endl;
             std::cout << "specify an empty file. The SV config file is a tab-separated file with" << std::endl;
-            std::cout << "5 columns (chrom, start, end, SV type, avg. freuqncy)." << std::endl;
+            std::cout << "5 columns (chrom, start, end, SV type, avg. freuqency)." << std::endl;
             std::cout << "The allowed SV types are" << std::endl;
             std::cout << "  - het_del, hom_del" << std::endl;
             std::cout << "  - het_dup, hom_dup" << std::endl;
@@ -589,6 +633,10 @@ int main_simulate(int argc, char **argv)
             std::cout << "  - inv_dup" << std::endl;
             std::cout << "  - false_del (to simulate lower mappability region)" << std::endl;
             std::cout << "SV breakpoints do not need to align with bin boundaries." << std::endl;
+            std::cout << std::endl;
+            std::cout << "Note: The frequency (5-th colum) is interpreted as an expected" << std::endl;
+            std::cout << "      fraction of cells carrying the SV - the exact number of cells" << std::endl;
+            std::cout << "      can eventually differ form that expectation." << std::endl;
         }
         return vm.count("help") ? 0 : 1;
     }
@@ -744,16 +792,25 @@ int main_simulate(int argc, char **argv)
     std::vector<TGenomeCounts> final_counts;
     std::vector<std::pair<Interval,std::string>> strand_states;
     std::vector<unsigned> str_states_cells;
+    std::vector<std::vector<simulator::phased_counts>> phases;
+
     for (unsigned i = 0; i < conf.n_cells; ++i)
     {
         unsigned cell_pos = strand_states.size();
+        std::vector<simulator::phased_counts> phase;
         final_counts.push_back(render_cell(haplotypes[i],   // simulated counts
                                            chrom_map,       // chromosome boundaries
                                            (float)conf.sce_num / bins.size(), // sce_probability
-                                           strand_states)); // Intervals with inherited strand states
+                                           strand_states, // Intervals with inherited strand states
+                                           phase,
+                                           conf.phased_frac));
+
         // note down which cells belong to these intervals
         for (; cell_pos < strand_states.size(); ++cell_pos)
             str_states_cells.push_back(i);
+
+        // save phased reads as additional output
+        phases.push_back(phase);
     }
     t2 = std::chrono::steady_clock::now();
     time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
@@ -821,8 +878,36 @@ int main_simulate(int argc, char **argv)
     t2 = std::chrono::steady_clock::now();
     time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
     if (conf.verbose) std::cout << "[Info] Running HMM took " << time.count() << " sec." << std::endl;
-    
-    
+
+
+    // write down phases
+    if (vm.count("phases"))
+    {
+        std::cout << "[Write] Phases to " << conf.f_phases.string() << std::endl;
+        std::ofstream out(conf.f_phases.string());
+        if (out.is_open())
+        {
+            out << "chrom\tstart\tend\tsample\tcell\th1_w\th1_c\th2_w\th2_c" << std::endl;
+            for (unsigned i = 0; i < phases.size(); ++i)
+            {
+                for (unsigned j = 0; j < phases[i].size(); ++j)
+                {
+                    out << chrom_names[bins[j].chr] << "\t";
+                    out << bins[j].start << "\t";
+                    out << bins[j].end << "\t";
+                    out << cells[i].sample_name << "\t";
+                    out << cells[i].cell_name << "\t";
+                    out << static_cast<int>(phases[i][j].h1_w) << "\t";
+                    out << static_cast<int>(phases[i][j].h1_c) << "\t";
+                    out << static_cast<int>(phases[i][j].h2_w) << "\t";
+                    out << static_cast<int>(phases[i][j].h2_c) << std::endl;
+                }
+            }
+        } else {
+            std::cerr << "[Warning] Cannot write to " << conf.f_phases.string() << std::endl;
+        }
+    }
+
     
 
 
