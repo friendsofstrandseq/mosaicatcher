@@ -8,6 +8,8 @@
 #include <utility>
 #include <chrono>
 
+//#include <boost/math/distributions/negative_binomial.hpp>
+#include <boost/multiprecision/random.hpp>
 #include <boost/program_options/cmdline.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
@@ -530,8 +532,6 @@ void simulate_SVs(std::vector<THapCount> & haplotypes,
 
 } /* namespace */
 
-
-
 struct Conf_simul {
     bool verbose;
     unsigned n_cells;
@@ -641,6 +641,20 @@ int main_simulate(int argc, char **argv)
         return vm.count("help") ? 0 : 1;
     }
 
+    // Error when coverage & p are not applicable to boost negative_binomial
+    double nb_n_param = conf.min_cov/2 * conf.p / (1-conf.p);
+    if (nb_n_param < 1) {
+        std::cerr << "[Error] The specified values for p and minCov will cause a problem" << std::endl;
+        std::cerr << "        for the negative binomial distribution. This is currently" << std::endl;
+        std::cerr << "        a limitation of boost::random::negative_binomial_distribution," << std::endl;
+        std::cerr << "        which only allows integer values > 0 as a value for n (Note" << std::endl;
+        std::cerr << "        that this behavious is different in boost::math::negative_bin" << std::endl;
+        std::cerr << "        omial, and from the implementation used in R." << std::endl;
+        std::cerr << "  Note: std::negative_binomial is not giving an error but produces" << std::endl;
+        std::cerr << "        wrong numbers!" << std::endl;
+        std::cerr << "Please choose a higher p or minCov!" << std::endl;
+        return 0;
+    }
 
     std::chrono::steady_clock::time_point t1, t2;
 
@@ -680,6 +694,8 @@ int main_simulate(int argc, char **argv)
     // Random generator
     std::random_device rd;
     std::mt19937 rd_gen(rd());
+    boost::random::mt19937 rd_gen_boost;
+
 
 
     // Generate basic haplotype counts of each cells, including random noise
@@ -693,7 +709,10 @@ int main_simulate(int argc, char **argv)
     {
         double cov_per_bin = rd_cov(rd_gen);
         std::geometric_distribution<>         rd_geom(5/(5+log2(cov_per_bin)));
-        std::negative_binomial_distribution<> rd_nb(cov_per_bin/2 * p/(1-p), p);
+        //std::negative_binomial_distribution<> rd_nb(cov_per_bin/2 * p/(1-p), p);
+        boost::random::negative_binomial_distribution<> rd_nb_boost(cov_per_bin/2 * p/(1-p), p);
+        boost::random::variate_generator<boost::mt19937&, boost::random::negative_binomial_distribution<> > rd_nb(rd_gen_boost, rd_nb_boost);
+
 
         CellInfo cell;
         cell.median_bin_count = static_cast<unsigned>(cov_per_bin);
@@ -703,8 +722,8 @@ int main_simulate(int argc, char **argv)
         THapCount count(bins.size());
         for (unsigned bin = 0; bin < bins.size(); ++bin)
         {
-            count[bin].h1_plus = rd_nb(rd_gen);
-            count[bin].h2_plus = rd_nb(rd_gen);
+            count[bin].h1_plus = rd_nb();
+            count[bin].h2_plus = rd_nb();
             count[bin].h1_minus = (rd_unif(rd_gen)<conf.alpha) ? rd_geom(rd_gen) : 0;
             count[bin].h2_minus = (rd_unif(rd_gen)<conf.alpha) ? rd_geom(rd_gen) : 0;
         }
