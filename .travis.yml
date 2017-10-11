@@ -2,5 +2,5 @@ language: cpp
 
 
 script:
-  pwd && hostname && ls && cmake —version && mkdir build && cd build && cmake ../src && make
+  pwd && hostname && ls && cmake —-version && mkdir build && cd build && cmake ../src && make
 
