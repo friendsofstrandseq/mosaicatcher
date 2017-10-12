@@ -39,14 +39,48 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
           packages:
-            - g++-5
+            - g++-6
             - doxygen
             - libboost-all-dev
       env: 
-        - MATRIX_EVAL="CC=gcc-5 && CXX=g++-5"
+        - MATRIX_EVAL="CC=gcc-6 && CXX=g++-6"
 
-    - os: macos
+    # Linux gcc-7
+    - os: linux
       addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-7
+            - doxygen
+            - libboost-all-dev
+      env: 
+        - MATRIX_EVAL="CC=gcc-7 && CXX=g++-7"
+
+    # OSX gcc-4.9
+    - os: osx
+      osx_image: xcode8
+      env:
+        - MATRIX_EVAL="CC=gcc-4.9 && CXX=g++-4.9"
+
+    # OSX gcc-5
+    - os: osx
+      osx_image: xcode8
+      env:
+        - MATRIX_EVAL="brew install doxygen gcc5 && CC=gcc-5 && CXX=g++-5"
+
+    # OSX gcc-6
+    - os: osx
+      osx_image: xcode8
+      env:
+        - MATRIX_EVAL="brew install doxygen gcc6 && CC=gcc-6 && CXX=g++-6"
+
+    # OSX gcc-7
+    - os: osx
+      osx_image: xcode8
+      env:
+        - MATRIX_EVAL="brew install doxygen gcc && CC=gcc-7 && CXX=g++-7"
 
     # no Doxygen
     - os: linux
@@ -65,5 +99,5 @@ before_install:
     - eval "${MATRIX_EVAL}"
 
 script:
-  mkdir build && cd build && cmake ../src && make && "./mosaic -—version"
+  mkdir build && cd build && cmake ../src && make
 
