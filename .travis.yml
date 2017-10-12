@@ -30,5 +30,5 @@ before_install:
     - eval "${MATRIX_EVAL}"
 
 script:
-  mkdir build && cd build && cmake  -DBoost_DEBUG=ON ../src && make
+  sudo apt-get update && ls -la /usr/lib/boost && sudo apt-cache search boost && mkdir build && cd build && cmake  -DBoost_DEBUG=ON ../src && make
 
