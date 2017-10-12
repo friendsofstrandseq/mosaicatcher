@@ -13,7 +13,12 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-4.9
-            - libboost-thread-dev
+            - libboost-dev
+            - libboost-program-options1.55.0
+            - libboost-filesystem1.55.0
+            - libboost-iostreams1.55.0
+            - libboost-random1.55.0
+            - libboost-iostreams1.55.0 
       env:
          - MATRIX_EVAL="CC=gcc-4.9 && CXX=g++-4.9"
 
@@ -22,5 +27,5 @@ before_install:
     - eval "${MATRIX_EVAL}"
 
 script:
-  pwd && sudo apt-cache search libboost && ls && mkdir build && cd build && cmake ../src && make
+  pwd && sudo apt-cache search libhts && ls && mkdir build && cd build && cmake ../src && make
 
