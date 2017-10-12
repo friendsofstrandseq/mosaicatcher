@@ -58,31 +58,41 @@ matrix:
       env: 
         - E="CC=gcc-7 && CXX=g++-7"
 
-    # OSX gcc-4.9
-    - os: osx
-      osx_image: xcode8
+    # Linux clang 3.6
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-precise-3.6
+          packages:
+            - clang-3.6
       env:
-        - E="CC=gcc-4.9 && CXX=g++-4.9"
+        - MATRIX_EVAL="CC=clang-3.6 && CXX=clang++-3.6"
 
-    # OSX gcc-5
-    - os: osx
-      osx_image: xcode8
+    # Linux clang 4
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - llvm-toolchain-trusty-4.0
+          packages:
+            - clang-4.0
       env:
-        - E="brew install doxygen gcc5 && CC=gcc-5 && CXX=g++-5"
+        - MATRIX_EVAL="CC=clang-4.0 && CXX=clang++-4.0"
 
-    # OSX gcc-6
-    - os: osx
-      osx_image: xcode8
+    # Linux clang 5
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - llvm-toolchain-trusty-5.0
+          packages:
+            - clang-5.0
       env:
-        - E="brew install doxygen gcc6 && CC=gcc-6 && CXX=g++-6"
+        - MATRIX_EVAL="CC=clang-5.0 && CXX=clang++-5.0"
 
-    # OSX gcc-7
-    - os: osx
-      osx_image: xcode8
-      env:
-        - E="brew install doxygen gcc && CC=gcc-7 && CXX=g++-7"
-
-    # no Doxygen
+    # Linux no Doxygen
     - os: linux
       addons:
         apt:
@@ -93,6 +103,45 @@ matrix:
             - libboost-all-dev
       env: 
         - E="CC=gcc-5 && CXX=g++-5"
+
+    # OSX gcc-4.9
+    - os: osx
+      osx_image: xcode8
+      env:
+        - E="CC=gcc-4.9 && CXX=g++-4.9"
+
+    # OSX gcc-5
+    - os: osx
+      osx_image: xcode8
+      env:
+        - E="brew install gcc5 && CC=gcc-5 && CXX=g++-5"
+
+    # OSX gcc-6
+    - os: osx
+      osx_image: xcode8
+      env:
+        - E="brew install gcc6 && CC=gcc-6 && CXX=g++-6"
+
+    # OSX gcc-7
+    - os: osx
+      osx_image: xcode8
+      env:
+        - E="brew install gcc && CC=gcc-7 && CXX=g++-7"
+
+    # OSX clang
+    - os: osx
+      osx_image: xcode9
+      compiler: clang
+
+    # OSX clang
+    - os: osx
+      osx_image: xcode8
+      compiler: clang
+
+    # OSX clang
+    - os: osx
+      osx_image: xcode7.3
+      compiler: clang
 
 
 before_install:
