@@ -23,12 +23,12 @@ matrix:
             - libboost-iostreams1.55.0 
       env:
          - MATRIX_EVAL="CC=gcc-4.9 && CXX=g++-4.9"
-         - MATRIX_EVAL="CC=gcc-5 && CXX=g++-5”
+
 
 
 before_install:
     - eval "${MATRIX_EVAL}"
 
 script:
-  mkdir build && cd build && cmake ../src && make
+  sudo apt-cache search doxygen && ls -la /usr/include && ls -la /usr/lib && ls -la /usr/include/boost/ && mkdir build && cd build && cmake ../src && make
 
