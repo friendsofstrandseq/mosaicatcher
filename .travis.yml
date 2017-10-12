@@ -8,18 +8,22 @@ matrix:
     addons:
       - os: linux
         apt:
-          sources: ubuntu-toolchain-r-test
+          sources: 
+            - ubuntu-toolchain-r-test
           packages:
             - g++-4.9
             - libboost-all-dev
-        env: MATRIX_EVAL="export CC=gcc-4.9 && export CXX=g++-4.9"
+        env: 
+          - MATRIX_EVAL="CC=gcc-4.9 && CXX=g++-4.9"
       - os: linux
         apt:
-          sources: ubuntu-toolchain-r-test
+          sources:
+            - ubuntu-toolchain-r-test
           packages:
             - g++-5
             - libboost-all-dev
-        env: MATRIX_EVAL="exoprt CC=gcc-5 && export CXX=g++-5"
+        env: 
+          - MATRIX_EVAL="CC=gcc-5 && CXX=g++-5"
 
 
 
