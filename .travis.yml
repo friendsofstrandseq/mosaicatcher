@@ -14,13 +14,13 @@ matrix:
           packages:
             - g++-4.9
             - doxygen
-            - libboost1.55-dev
-            - libboost-system1.55.0
-            - libboost-program-options1.55.0
-            - libboost-filesystem1.55.0
-            - libboost-iostreams1.55.0
-            - libboost-random1.55.0
-            - libboost-iostreams1.55.0 
+            #- libboost1.55-dev
+            #- libboost-system1.55.0
+            #- libboost-program-options1.55.0
+            #- libboost-filesystem1.55.0
+            #- libboost-iostreams1.55.0
+            #- libboost-random1.55.0
+            #- libboost-iostreams1.55.0 
       env:
          - MATRIX_EVAL="CC=gcc-4.9 && CXX=g++-4.9"
 
@@ -30,5 +30,5 @@ before_install:
     - eval "${MATRIX_EVAL}"
 
 script:
-  sudo apt-get update && ls -la /usr/lib/boost && sudo apt-cache search boost && mkdir build && cd build && cmake  -DBoost_DEBUG=ON ../src && make
+  sudo apt-cache search boost && mkdir build && cd build && cmake  -DBoost_DEBUG=ON ../src && make
 
