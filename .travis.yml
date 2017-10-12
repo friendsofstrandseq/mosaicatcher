@@ -23,5 +23,5 @@ before_install:
     - eval "${MATRIX_EVAL}"
 
 script:
-  mkdir build && cd build && cmake ../src && make && ./mosaic —version
+  mkdir build && cd build && cmake ../src && make && ./mosaic -—version
 
