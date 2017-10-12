@@ -3,32 +3,25 @@ language: cpp
 git:
   submodules: false
 
-os: 
-  - linux
-
-# Addons - with and without doxygen
 matrix:
-  inclue:
+  include:
     addons:
-      - apt:
-          sources:
-            - ubuntu-toolchain-r-test
+      - os: linux
+        apt:
+          sources: ubuntu-toolchain-r-test
           packages:
             - g++-4.9
-            - g++-5
             - libboost-all-dev
-      - apt:
-          sources:
-            - ubuntu-toolchain-r-test
+        env: MATRIX_EVAL="export CC=gcc-4.9 && export CXX=g++-4.9"
+      - os: linux
+        apt:
+          sources: ubuntu-toolchain-r-test
           packages:
-            - g++-4.9
             - g++-5
             - libboost-all-dev
-            - doxygen
+        env: MATRIX_EVAL="exoprt CC=gcc-5 && export CXX=g++-5"
 
-env: 
-  - MATRIX_EVAL="export CC=gcc-4.9 && export CXX=g++-4.9"
-  - MATRIX_EVAL="exoprt CC=gcc-5 && export CXX=g++-5"
+
 
 before_install:
     - eval "${MATRIX_EVAL}"
