@@ -32,21 +32,9 @@ ExternalProject_Add(htslib
     INSTALL_COMMAND make install prefix=${CMAKE_BINARY_DIR}/htslib
     LOG_DOWNLOAD 1
 )
-#add_dependencies (htslib)
-include_directories (${CMAKE_BINARY_DIR}/htslib)
+link_directories (${CMAKE_BINARY_DIR}/htslib/lib)
+include_directories (${CMAKE_BINARY_DIR}/htslib/include)
 
-#include_directories ("htslib")
-
-#file(GLOB SOURCES "${CMAKE_SOURCE_DIR}/htslib/*.h" "${CMAKE_SOURCE_DIR}/htslib/hts.c")
-#list(REMOVE_ITEM SOURCES
-#    "${CMAKE_SOURCE_DIR}/htslib/tabix.c"
-#    "${CMAKE_SOURCE_DIR}/htslib/htsfile.c"
-#    "${CMAKE_SOURCE_DIR}/htslib/bgzip.c"
-#    "${CMAKE_SOURCE_DIR}/htslib/hfile_irods.c"
-#)
-#message(${SOURCES})
-#add_library(hts ${SOURCES})
-#target_link_libraries(hts z pthread)
 
 
 ### Set version
@@ -97,7 +85,7 @@ set(HEADER_FILES
 add_executable (mosaic main.cpp ${HEADER_FILES})
 target_link_libraries (mosaic LINK_PUBLIC ${Boost_LIBRARIES})
 target_link_libraries (mosaic LINK_PUBLIC hts)
-
+add_dependencies (mosaic htslib)
 
 
 ### Doxygen API documentation
@@ -111,5 +99,5 @@ if(DOXYGEN_FOUND)
             COMMENT "Generating API documentation with Doxygen" VERBATIM
             )
 else()
-    message("Need Doxygen to produce API documentation")
+    message("Need Doxygen to produce API documentation. This is skipped.")
 endif(DOXYGEN_FOUND)
