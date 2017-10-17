@@ -2,19 +2,21 @@
 
 ## Installation (beta)
 
-Mosaicatcher can be built using [Cmake](https://cmake.org/) (v3.0). It relies on two external dependecies
+Mosaicatcher can be built using [Cmake](https://cmake.org/) (v3.0) on **Linux** and **MacOS**. 
 
- * [boost libraries](http://www.boost.org/) >= 1.63 need to be installed on your system
+It relies on two external dependecies
+
+ * [boost libraries](http://www.boost.org/) >= 1.50. This needs to be installed on your system
  * [HTSlib](https://github.com/samtools/htslib) >= 1.3.1. Cmake should be able to install this for you
 
 ```
-git clone https://github.com/friendsofstrandseq/mosaicatcher.git
+git clone https://github.com/friendsofstrandseq/mosaicatcher.git --branch develop
 cd mosaicatcher
 mkdir build
 cd build
 cmake ../src
 make
-./src/mosaic
+./mosaic --version
 ```
 
 ## Strand-seq read counting and generation of QC plots
