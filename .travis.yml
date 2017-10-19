@@ -6,6 +6,57 @@ git:
 matrix:
   include:
 
+    # Linux gcc-4.9
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-4.9
+            - doxygen
+            - libboost-all-dev
+      env:
+        - E="CC=gcc-4.9 && CXX=g++-4.9"
+
+    # Linux gcc-5
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-5
+            - doxygen
+            - libboost-all-dev
+      env:
+        - E="CC=gcc-5 && CXX=g++-5"
+
+    # Linux gcc-6
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-6
+            - doxygen
+            - libboost-all-dev
+      env:
+        - E="CC=gcc-6 && CXX=g++-6"
+
+    # Linux gcc-7
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-7
+            - doxygen
+            - libboost-all-dev
+      env:
+        - E="CC=gcc-7 && CXX=g++-7"
 
     # OSX gcc-4.9
     - os: osx
