@@ -62,7 +62,7 @@ matrix:
     - os: osx
       osx_image: xcode8
       before_install:
-        brew install boost --c++11 --without-single --without-static 
+        brew update 
       env:
         - E="CC=gcc-4.9 && CXX=g++-4.9"
 
@@ -70,7 +70,7 @@ matrix:
     - os: osx
       osx_image: xcode8
       before_install:
-        brew install boost --c++11 --without-single --without-static 
+        brew update 
       env:
         - E="brew install gcc5 && CC=gcc-5 && CXX=g++-5"
 
@@ -78,7 +78,7 @@ matrix:
     - os: osx
       osx_image: xcode8
       before_install:
-        brew install boost --c++11 --without-single --without-static 
+        brew update 
       env:
         - E="brew install gcc6 && CC=gcc-6 && CXX=g++-6"
 
@@ -86,7 +86,7 @@ matrix:
     - os: osx
       osx_image: xcode8
       before_install:
-        brew install boost --c++11 --without-single --without-static 
+        brew update 
       env:
         - E="brew install gcc && CC=gcc-7 && CXX=g++-7"
 
@@ -94,21 +94,21 @@ matrix:
     - os: osx
       osx_image: xcode9
       before_install:
-        brew install boost --c++11 --without-single --without-static 
+        brew update 
       compiler: clang
 
     # OSX clang
     - os: osx
       osx_image: xcode8
       before_install:
-        brew install boost --c++11 --without-single --without-static 
+        brew update 
       compiler: clang
 
     # OSX clang
     - os: osx
       osx_image: xcode7.3
       before_install:
-        brew install boost --c++11 --without-single --without-static 
+        brew update 
       compiler: clang
 
 

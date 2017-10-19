@@ -206,7 +206,7 @@ TGenomeCounts render_cell(THapCount const & hapls,
         // Initially, choose states with equal prob.
         bool W_h1 = rd_unif(rd_gen) < 0.5;
         bool W_h2 = rd_unif(rd_gen) < 0.5;
-        std::string state(W_h1 && W_h2 ? "WW" : (!W_h1 && !W_h2 ? "CC" : "WC"));
+        std::string state = std::string(W_h1?"W":"C") + std::string(W_h2?"W":"C");
 
         // Iterate over bins
         unsigned start_bin = 0;
