@@ -18,23 +18,24 @@ format_Mb <- function(x) {
 }
 
 # if gzip
+zcat_command = "/usr/local/bin/zcat"
 if (substr(f_in,nchar(f_in)-2,nchar(f_in)) == ".gz")
-    f_in = paste("zcat",f_in)
+    f_in = paste(zcat_command,f_in)
 
 # Read counts & filter chromosomes (this is human-specific)
 d = fread(f_in)
 
 # Check that correct files are given:
-assert_that("chrom" %in% colnames(d))
-assert_that("start" %in% colnames(d) && is.integer(d$start))
-assert_that("end" %in% colnames(d) && is.integer(d$end))
-assert_that("sample" %in% colnames(d))
-assert_that("cell" %in% colnames(d))
-assert_that("w" %in% colnames(d) && is.integer(d$w))
-assert_that("c" %in% colnames(d) && is.integer(d$c))
-assert_that("class" %in% colnames(d))
+assert_that("chrom" %in% colnames(d),
+            "start" %in% colnames(d) && is.integer(d$start),
+            "end" %in% colnames(d) && is.integer(d$end),
+            "sample" %in% colnames(d),
+            "cell" %in% colnames(d),
+            "w" %in% colnames(d) && is.integer(d$w),
+            "c" %in% colnames(d) && is.integer(d$c),
+            "class" %in% colnames(d))
 
-# Re-name and -order chromosomes
+# Re-name and -order chromosomes - this is human-specific
 d = d[, chrom := sub('^chr','',chrom)][]
 d = d[grepl('^([1-9]|[12][0-9]|X|Y)$', chrom),]
 d = d[, chrom := factor(chrom, levels=as.character(c(1:22,'X','Y')), ordered = T)]
@@ -42,20 +43,106 @@ d = d[, chrom := factor(chrom, levels=as.character(c(1:22,'X','Y')), ordered = T
 
 # Read cell info file for bells and whistles
 if (!is.null(f_info)) {
-    I = fread(f_info, skip=12)
-    assert_that("sample" %in% colnames(I))
-    assert_that("cell" %in% colnames(I))
-    assert_that("pass1" %in% colnames(I))
-    assert_that("dupl" %in% colnames(I))
-    assert_that("mapped" %in% colnames(I))
-    assert_that("nb_p" %in% colnames(I) && is.numeric(I$nb_p))
-    assert_that("nb_n" %in% colnames(I) && is.numeric(I$nb_n))
-    assert_that("nb_z" %in% colnames(I) && is.numeric(I$nb_z))
+    info = fread(f_info, skip=12)
+    assert_that("sample" %in% colnames(info),
+                "cell" %in% colnames(info),
+                "pass1" %in% colnames(info),
+                "dupl" %in% colnames(info),
+                "mapped" %in% colnames(info),
+                "nb_p" %in% colnames(info) && is.numeric(info$nb_p),
+                "nb_n" %in% colnames(info) && is.numeric(info$nb_n),
+                "nb_z" %in% colnames(info) && is.numeric(info$nb_z))
 }
 
 
-# Plot all cells
+
+add_overview_plot = T
+
 cairo_pdf(pdf_out, width=14, height=10, onefile = T)
+if (add_overview_plot) {
+
+    message("Plotting an overview page")
+
+    n_samples = nrow(unique(d[, .(sample)]))
+    n_cells   = nrow(unique(d[, .(sample,cell)]))
+    n_bins    = nrow(unique(d[, .(chrom, start,end)]))
+    mean_bin  = unique(d[, .(chrom, start,end)])[, mean(end-start)]
+    n_excl    = nrow(d[, .N, by = .(chrom, start, end,class)][class == "None" & N == n_cells,])
+
+    # Bin sizes
+    ov_binsizes <- ggplot(unique(d[, .(chrom,start,end)])) +
+        geom_histogram(aes(end - start), bins = 50) +
+        theme_minimal() +
+        scale_y_log10(breaks = c(1,10,100,1000,10e3)) +
+        scale_x_continuous(breaks = pretty_breaks(5), labels = comma) +
+        ggtitle(paste0("Bin sizes (", n_bins, " bins, mean ", round(mean_bin/1000,1), " kb)")) +
+        xlab("Bin size (bp)")
+
+    # analyse how many bins are "None"
+    ov_excbins = ggplot(d[, .N, by = .(chrom, start, end,class)][class == "None" & N == n_cells,]) +
+        aes(chrom) +
+        geom_bar() +
+        theme_minimal() +
+        ggtitle(paste0("Excluded bins per chromosome (total = ", n_excl, ")"))
+
+
+    # coverage
+    ov_coverage <- ggplot(d[,.(total = sum(w+c)), by = .(sample, cell)]) +
+        geom_histogram(aes(total, fill = sample), bins = 50) +
+        scale_x_continuous(breaks = pretty_breaks(5),
+                           labels = comma) +
+        xlab("Total number of reads per cell") +
+        theme_minimal() +
+        theme(legend.position = "bottom") +
+        scale_fill_brewer(type = "qual", palette = 6)
+
+    # Overview mean / variance
+    d_mv = d[class != "None", .(mean = mean(w+c), var = var(w+c)), by = .(sample, cell)]
+    d_p  = d_mv[, .(p = sum(mean*mean) / sum(mean*var)), by = sample]
+    ov_meanvar <- ggplot(d_mv) + geom_point(aes(mean,var), alpha = 0.4) +
+        facet_wrap(~sample, nrow = 1) +
+        theme_minimal() +
+        geom_abline(data = d_p, aes(slope = 1/p, intercept = 0), col = "dodgerblue") +
+        geom_label(data = d_p, aes(x=0, y=Inf, label = paste("p =", round(p,3))), hjust=0,vjust=1) +
+        ggtitle("Mean variance relationship of reads per bin") +
+        xlab("Mean") + ylab("Variance")
+
+
+    # Arranging overview plot
+    content = ggdraw() +
+        draw_plot(ov_binsizes, x = 0,   y=.66, width = .5,  height = .33) +
+        draw_plot(ov_excbins,  x = .5,  y=.66, width = .5,  height = .33) +
+        draw_plot(ov_coverage, x = 0,   y=.33, width = .5,  height = .33) +
+        draw_plot(ov_meanvar,  x = 0,   y=0,   width = min(n_samples/3,1),  height = .33)
+
+
+    # Add duplicate rates if available
+    if (exists("info")) {
+        ov_duplicate <- ggplot(info) +
+            aes(dupl / (mapped-suppl), fill = sample) +
+            geom_histogram(bins = 50) +
+            xlab("Duplicate rate") +
+            scale_x_continuous(labels = percent) +
+            theme_minimal() +
+            theme(legend.position = "bottom") +
+            scale_fill_brewer(type = "qual", palette = 6)
+        content = content +
+            draw_plot(ov_duplicate, x = 0.55, y = .33, width = .45, height = .33)
+    }
+
+    title <- ggdraw() + draw_label(paste("Overview across", n_cells, "cells from", n_samples, "samples"), fontface='bold')
+    side  <- ggdraw() + draw_label(label = paste0(args[1], "\n",date()), angle = 90, size = 10, vjust = 1)
+
+    final <- plot_grid(title, content, ncol=1, rel_heights=c(0.07, 1))
+    xxx   <- plot_grid(side, final, nrow = 1, rel_widths = c(0.05,1))
+
+    print(xxx)
+}
+
+dev.off()
+stop()
+
+# Plot all cells
 for (s in unique(d$sample))
 {
     for (ce in unique(d[sample == s,]$cell))
@@ -131,7 +218,7 @@ for (s in unique(d$sample))
             xlab("reads per bin") + facet_wrap(~class, nrow=1, scales = "free")
 
         if (!is.null(f_info)) {
-            Ie = I[sample == s & cell == ce,]
+            Ie = info[sample == s & cell == ce,]
             if(nrow(Ie) == 1 && Ie$pass1==1) {
                 p = Ie$nb_p
                 n = Ie$nb_n
@@ -175,7 +262,7 @@ for (s in unique(d$sample))
         
         # If available, add additional info like duplicate rate and NB params!
         if (!is.null(f_info)) {
-            Ie = I[sample == s & cell == ce,]
+            Ie = info[sample == s & cell == ce,]
             if(nrow(Ie) == 1) {
                 all <- all +
                     draw_label(paste0("Duplicate rate: ", round(Ie$dupl/Ie$mapped,2)*100,"%"),
