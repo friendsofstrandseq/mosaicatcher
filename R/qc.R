@@ -50,8 +50,8 @@ if (!is.null(f_info)) {
                 "dupl" %in% colnames(info),
                 "mapped" %in% colnames(info),
                 "nb_p" %in% colnames(info) && is.numeric(info$nb_p),
-                "nb_n" %in% colnames(info) && is.numeric(info$nb_n),
-                "nb_z" %in% colnames(info) && is.numeric(info$nb_z))
+                "nb_r" %in% colnames(info) && is.numeric(info$nb_r),
+                "nb_a" %in% colnames(info) && is.numeric(info$nb_a))
 }
 
 
@@ -221,8 +221,8 @@ for (s in unique(d$sample))
             Ie = info[sample == s & cell == ce,]
             if(nrow(Ie) == 1 && Ie$pass1==1) {
                 p = Ie$nb_p
-                n = Ie$nb_n
-                z = Ie$nb_z
+                r = Ie$nb_r
+                a = Ie$nb_a
                 x = seq(0,plt_hist_xlim)
                 scale_factors = e.melt[,.N, by = .(class,strand,coverage)][, .(scale = max(N)), by = class]
                 nb = data.table(x      = rep(x,6),
@@ -233,12 +233,12 @@ for (s in unique(d$sample))
                                 scale  = c(rep(scale_factors[class == labels[class=="WW",]$label,]$scale, 2*length(x)),
                                            rep(scale_factors[class == labels[class=="WC",]$label,]$scale, 2*length(x)),
                                            rep(scale_factors[class == labels[class=="CC",]$label,]$scale, 2*length(x))),
-                                y      = c(dnbinom(x, z,   p),
-                                           dnbinom(x, 2*n, p),
-                                           dnbinom(x, n,   p),
-                                           dnbinom(x, n,   p),
-                                           dnbinom(x, 2*n, p),
-                                           dnbinom(x, z,   p)  ))
+                                y      = c(dnbinom(x, a*r,     p),
+                                           dnbinom(x, (1-a)*r, p),
+                                           dnbinom(x, r,       p),
+                                           dnbinom(x, r,       p),
+                                           dnbinom(x, (1-a)*r, p),
+                                           dnbinom(x, a*r,     p)  ))
                 plt_hist <- plt_hist + geom_line(data = nb, aes(x,y*scale,col=strand))
             }
         }
@@ -269,7 +269,7 @@ for (s in unique(d$sample))
                                x=.29,  y=.80, vjust=1, hjust=0, size=10)
                 if (Ie$pass1 == 1) {
                     all <- all +
-                        draw_label(paste0("NB parameters (p,n,z): ", round(Ie$nb_p,2), ",",  round(Ie$nb_n,2), ",", round(Ie$nb_z,2)),    
+                        draw_label(paste0("NB parameters (p,r,a): ", round(Ie$nb_p,2), ",",  round(Ie$nb_r,2), ",", round(Ie$nb_a,2)),    
                                    x=.29,  y=.78, vjust=1, hjust=0, size=10)
                 }
             }

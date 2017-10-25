@@ -543,6 +543,7 @@ struct Conf_simul {
     boost::filesystem::path f_fai;
     boost::filesystem::path f_svs;
     boost::filesystem::path f_segment;
+    boost::filesystem::path f_info;
 
     double p, min_cov, max_cov, alpha, phased_frac;
     unsigned sce_num;
@@ -580,6 +581,7 @@ int main_simulate(int argc, char **argv)
     ("sceFile,S",     boost::program_options::value<boost::filesystem::path>(&conf.f_sce), "output the positions of SCEs")
     ("variantFile,V", boost::program_options::value<boost::filesystem::path>(&conf.f_svs), "output SVs and which cells they were simulated in")
     ("segmentFile,U", boost::program_options::value<boost::filesystem::path>(&conf.f_segment), "output optimal segmentation according to SVs and SCEs.")
+    ("info,i",        boost::program_options::value<boost::filesystem::path>(&conf.f_info), "Write info about samples")
     ;
 
     boost::program_options::options_description po_rand("Radnomization parameters");
@@ -647,11 +649,13 @@ int main_simulate(int argc, char **argv)
         std::cerr << "[Error] The specified values for p and minCov will cause a problem" << std::endl;
         std::cerr << "        for the negative binomial distribution. This is currently" << std::endl;
         std::cerr << "        a limitation of boost::random::negative_binomial_distribution," << std::endl;
-        std::cerr << "        which only allows integer values > 0 as a value for n (Note" << std::endl;
-        std::cerr << "        that this behavious is different in boost::math::negative_bin" << std::endl;
-        std::cerr << "        omial, and from the implementation used in R." << std::endl;
-        std::cerr << "  Note: std::negative_binomial is not giving an error but produces" << std::endl;
+        std::cerr << "        which only allows integer values > 0 as a value for n" << std::endl;
+        std::cerr << "        This behaviour is different in boost::math::negative_binomial" << std::endl;
+        std::cerr << "        and again different in the implementation used in R." << std::endl;
+        std::cerr << "        std::negative_binomial is not giving an error but produces" << std::endl;
         std::cerr << "        wrong numbers!" << std::endl;
+        std::cerr << "        This limitation is also the reason why background reads cannot be" << std::endl;
+        std::cerr << "        modelled by an NB for now." << std::endl;
         std::cerr << "Please choose a higher p or minCov!" << std::endl;
         return 0;
     }
@@ -709,7 +713,7 @@ int main_simulate(int argc, char **argv)
     {
         double cov_per_bin = rd_cov(rd_gen);
         std::geometric_distribution<>         rd_geom(5/(5+log2(cov_per_bin)));
-        //std::negative_binomial_distribution<> rd_nb(cov_per_bin/2 * p/(1-p), p);
+        //std::negative_binomial_distribution<> rd_nb(cov_per_bin/2 * p/(1-p), p); // gives wrong results for small r !!
         boost::random::negative_binomial_distribution<> rd_nb_boost(cov_per_bin/2 * p/(1-p), p);
         boost::random::variate_generator<boost::mt19937&, boost::random::negative_binomial_distribution<> > rd_nb(rd_gen_boost, rd_nb_boost);
 
@@ -717,7 +721,10 @@ int main_simulate(int argc, char **argv)
         CellInfo cell;
         cell.median_bin_count = static_cast<unsigned>(cov_per_bin);
         cell.sample_name = "simulated";
-        cell.cell_name = std::string("cell_") + std::to_string(i);
+        cell.cell_name   = std::string("cell_") + std::to_string(i);
+        cell.nb_p        = p;
+        cell.nb_a        = 0;
+        cell.nb_r        = cov_per_bin * p / (1-p);
 
         THapCount count(bins.size());
         for (unsigned bin = 0; bin < bins.size(); ++bin)
@@ -782,7 +789,6 @@ int main_simulate(int argc, char **argv)
     for (int32_t chrom = 1; chrom < chrom_map.size(); ++chrom)
         optimal_breakpoints.insert(chrom_map[chrom]-1);
 
-
     // Write optimal segmentation file, which includes SV breakpoints and SCE breakpoints.
     if (vm.count("segmentFile"))
     {
@@ -802,9 +808,6 @@ int main_simulate(int argc, char **argv)
         }
     }
     
-
-
-
 
     // Turn haplotypes into TGenomeCounts and simulate SCEs
     t1 = std::chrono::steady_clock::now();
@@ -856,6 +859,19 @@ int main_simulate(int argc, char **argv)
             std::cerr << "[Warning] Cannot write to " << conf.f_sce.string() << std::endl;
         }
     }
+
+
+    // Get total number of reads per cell and print cell information:
+    for (unsigned i = 0; i < final_counts.size(); ++i) {
+        for (unsigned bin = 0; bin < bins.size(); ++bin) {
+            cells[i].n_mapped += final_counts[i][bin].watson_count + final_counts[i][bin].crick_count;
+        }
+    }
+    if (vm.count("info")) {
+        std::cout << "[Write] Cell info to " << conf.f_info.string() << ". Note that NB parameters are estimated before SVs are introduced." << std::endl;
+        write_cell_info(conf.f_info.string(), cells);
+    }
+
 
 
     //

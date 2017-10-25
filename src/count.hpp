@@ -98,18 +98,18 @@ void run_standard_HMM(std::vector<TGenomeCounts> & counts,
     {
         // set NB(n,p) parameters according to `p` of sample and mean of cell.
         float p = samples.at(cells[*i].sample_name).p;
-        float n = (float)cells[*i].mean_bin_count / 2 * p / (1-p);
-        float z = 0.15*n; // mean in zero bins
+        float n = (float)cells[*i].mean_bin_count * p / (1-p);
+        float a = 0.1;
         cells[*i].nb_p = p;
-        cells[*i].nb_n = n;
-        cells[*i].nb_z = z;
+        cells[*i].nb_r = n;
+        cells[*i].nb_a = a;
 
         //std::cout << "NB parameters for cell <?>" << ": p=" << p << "\tn=" << n << "\tz=" << z << std::endl;
 
         hmm.set_emissions( {\
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,2*n), hmm::NegativeBinomial(p,  z)}), // CC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  n), hmm::NegativeBinomial(p,  n)}), // WC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p,  z), hmm::NegativeBinomial(p,2*n)})  // WW
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p, (1-a)*n), hmm::NegativeBinomial(p, a*n)}), // CC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p, n/2),     hmm::NegativeBinomial(p, n/2)}), // WC
+            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p, a*n),     hmm::NegativeBinomial(p, (1-a)*n)})  // WW
         });
         run_HMM(hmm, counts[*i], good_bins, good_map);
     }
@@ -381,44 +381,7 @@ int main_count(int argc, char **argv)
     // Print cell information:
     if (vm.count("info")) {
         if (vm.count("verbose")) std::cout << "[Write] Cell summary: " << conf.f_info.string() << std::endl;
-        std::ofstream out(conf.f_info.string());
-        if (out.is_open()) {
-            out << "# sample:  Sample (has multiple cells)" << std::endl;
-            out << "# cell:    Name of the cell." << std::endl;
-            out << "# mapped:  Total number of reads seen" << std::endl;
-            out << "# suppl:   Supplementary, secondary or QC-failed reads (filtered out)" << std::endl;
-            out << "# dupl:    Reads filtered out as PCR duplicates" << std::endl;
-            out << "# mapq:    Reads filtered out due to low mapping quality" << std::endl;
-            out << "# read2:   Reads filtered out as 2nd read of pair" << std::endl;
-            out << "# good:    Reads used for counting." << std::endl;
-            out << "# pass1:   Enough coverage? If false, ignore all columns from now" << std::endl;
-            out << "# nb_p:    Negative Binomial parameter p. Constant for one sample." << std::endl;
-            out << "# nb_n:    Negative Binomial parameter n. We use NB(p,n)*NB(p,n) in WC states, but NB(p,2*n)*NB(p,z) in WW or CC states." << std::endl;
-            out << "# nb_z:    Negative Binomial parameter z used for zero expectation (see above)." << std::endl;
-            out << "sample\tcell\tmedbin\tmapped\tsuppl\tdupl\tmapq\tread2\tgood\tpass1\tnb_p\tnb_n\tnb_z" << std::endl;
-
-            // do not sort "cells" itselft, so cells == counts == conf.f_in
-            std::vector<CellInfo> cells2 = cells; // copy
-            sort(cells2.begin(), cells2.end(), [] (CellInfo const & a, CellInfo const & b) {if (a.sample_name==b.sample_name) { return a.id < b.id;} else {return a.sample_name < b.sample_name;} } );
-
-            for (CellInfo const & cell : cells2) {
-                out << cell.sample_name << "\t";
-                out << conf.f_in[cell.id].stem().string() << "\t";
-                out << cell.median_bin_count << "\t";
-                out << cell.n_mapped << "\t";
-                out << cell.n_supplementary << "\t";
-                out << cell.n_pcr_dups << "\t";
-                out << cell.n_low_mapq << "\t";
-                out << cell.n_read2s << "\t";
-                out << cell.n_counted << "\t";
-                out << cell.pass_qc << "\t";
-                out << cell.nb_p << "\t";
-                out << cell.nb_n << "\t";
-                out << cell.nb_z << std::endl;
-            }
-        } else {
-            std::cerr << "[Warning] Cannot write to " << conf.f_info.string() << std::endl;
-        }
+        write_cell_info(conf.f_info.string(), cells);
     }
 
 
