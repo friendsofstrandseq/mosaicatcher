@@ -18,7 +18,7 @@ format_Mb <- function(x) {
 }
 
 # if gzip
-zcat_command = "/usr/local/bin/zcat"
+zcat_command = "zcat"
 if (substr(f_in,nchar(f_in)-2,nchar(f_in)) == ".gz")
     f_in = paste(zcat_command,f_in)
 
