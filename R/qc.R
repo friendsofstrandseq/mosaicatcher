@@ -139,8 +139,6 @@ if (add_overview_plot) {
     print(xxx)
 }
 
-dev.off()
-stop()
 
 # Plot all cells
 for (s in unique(d$sample))
