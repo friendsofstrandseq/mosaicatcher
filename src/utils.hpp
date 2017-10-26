@@ -43,6 +43,7 @@ struct CellInfo {
     float mean_bin_count;           /* after removal of bad bins */
     std::string sample_name;
     std::string cell_name;
+    std::string bam_file;
     int32_t id;                     /* position in conf.f_in */
     float nb_p, nb_r, nb_a;         /* NB parameters */
     bool pass_qc;                   /* set to false if no (good) SS library */
@@ -85,7 +86,8 @@ bool write_cell_info(std::string const & f_out,
         out << "# nb_p:    Negative Binomial parameter p. Constant for one sample." << std::endl;
         out << "# nb_r:    Negative Binomial parameter r. We use NB(p,r/2) * NB(p,r/2) in WC states, but NB(p,(1-a)*r)*NB(p,a*r) in WW or CC states." << std::endl;
         out << "# nb_a:    Negative Binomial parameter a (alpha) used for zero expectation (see above)." << std::endl;
-        out << "sample\tcell\tmedbin\tmapped\tsuppl\tdupl\tmapq\tread2\tgood\tpass1\tnb_p\tnb_r\tnb_a" << std::endl;
+        out << "# bam:     Bam file of this cell" << std::endl;
+        out << "sample\tcell\tmedbin\tmapped\tsuppl\tdupl\tmapq\tread2\tgood\tpass1\tnb_p\tnb_r\tnb_a\tbam" << std::endl;
 
         // do not sort "cells" itselft, so cells == counts == conf.f_in
         std::vector<CellInfo> cells2 = cells; // copy
@@ -104,7 +106,8 @@ bool write_cell_info(std::string const & f_out,
             out << cell.pass_qc << "\t";
             out << cell.nb_p << "\t";
             out << cell.nb_r << "\t";
-            out << cell.nb_a << std::endl;
+            out << cell.nb_a << "\t";
+            out << cell.bam_file << std::endl;
         }
     } else {
         std::cerr << "[Warning] Cannot write to " << f_out << std::endl;
@@ -133,7 +136,7 @@ double sum(std::vector<double> const & vec)
 
 
 // from Delly
-inline bool get_SM_tag(std::string const& header, std::string& sample_name)
+inline bool get_RG_tag(std::string const & tag, std::string const& header, std::string& sample_name)
 {
     std::set<std::string> smIdentifiers;
     typedef std::vector<std::string> TStrParts;
@@ -151,7 +154,7 @@ inline bool get_SM_tag(std::string const& header, std::string& sample_name)
                 size_t sp = itKV->find(":");
                 if (sp != std::string::npos) {
                     std::string field = itKV->substr(0, sp);
-                    if (field == "SM") {
+                    if (field == tag) {
                         std::string rgSM = itKV->substr(sp+1);
                         smIdentifiers.insert(rgSM);
                     }

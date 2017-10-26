@@ -722,6 +722,7 @@ int main_simulate(int argc, char **argv)
         cell.median_bin_count = static_cast<unsigned>(cov_per_bin);
         cell.sample_name = "simulated";
         cell.cell_name   = std::string("cell_") + std::to_string(i);
+        cell.bam_file    = "no_file";
         cell.nb_p        = p;
         cell.nb_a        = 0;
         cell.nb_r        = cov_per_bin * p / (1-p);

@@ -218,16 +218,23 @@ int main_count(int argc, char **argv)
     for(unsigned i = 0; i < conf.f_in.size(); ++i)
     {
         cells[i].id = (int32_t)i;
+        cells[i].bam_file = conf.f_in[i].string();
         samFile* samfile = sam_open(conf.f_in[i].string().c_str(), "r");
         if (samfile == NULL) {
             std::cerr << "[Error] Fail to open file " << conf.f_in[0].string() << std::endl;
             return 1;
         }
         hdr = sam_hdr_read(samfile);
-        if (!get_SM_tag(hdr->text, cells[i].sample_name)) {
+        if (!get_RG_tag("SM", hdr->text, cells[i].sample_name)) {
             std::cerr << "[Error] Each BAM file has to have exactly one SM tag." << std::endl << std::endl;
             goto print_usage_and_exit;
         }
+        if (!get_RG_tag("ID", hdr->text, cells[i].cell_name)) {
+            std::cerr << "[Error] Each BAM file has to have exactly one SM tag." << std::endl << std::endl;
+            goto print_usage_and_exit;
+        }
+
+
         sam_close(samfile);
     }
 
