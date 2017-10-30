@@ -90,10 +90,8 @@ bool write_cell_info(std::string const & f_out,
         out << "sample\tcell\tmedbin\tmapped\tsuppl\tdupl\tmapq\tread2\tgood\tpass1\tnb_p\tnb_r\tnb_a\tbam" << std::endl;
 
         // do not sort "cells" itselft, so cells == counts == conf.f_in
-        std::vector<CellInfo> cells2 = cells; // copy
-        sort(cells2.begin(), cells2.end(), [] (CellInfo const & a, CellInfo const & b) {if (a.sample_name==b.sample_name) { return a.id < b.id;} else {return a.sample_name < b.sample_name;} } );
 
-        for (CellInfo const & cell : cells2) {
+        for (CellInfo const & cell : cells) {
             out << cell.sample_name << "\t";
             out << cell.cell_name << "\t";
             out << cell.median_bin_count << "\t";
