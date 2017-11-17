@@ -89,8 +89,6 @@ bool write_cell_info(std::string const & f_out,
         out << "# bam:     Bam file of this cell" << std::endl;
         out << "sample\tcell\tmedbin\tmapped\tsuppl\tdupl\tmapq\tread2\tgood\tpass1\tnb_p\tnb_r\tnb_a\tbam" << std::endl;
 
-        // do not sort "cells" itselft, so cells == counts == conf.f_in
-
         for (CellInfo const & cell : cells) {
             out << cell.sample_name << "\t";
             out << cell.cell_name << "\t";
