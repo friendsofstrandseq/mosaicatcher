@@ -210,20 +210,21 @@ int main_count(int argc, char **argv)
         cells[i].bam_file = conf.f_in[i].string();
         samFile* samfile = sam_open(conf.f_in[i].string().c_str(), "r");
         if (samfile == NULL) {
-            std::cerr << "[Error] Fail to open file " << conf.f_in[0].string() << std::endl;
+            std::cerr << "[Error] Fail to open file " << conf.f_in[i].string() << std::endl;
             return 1;
         }
         hdr = sam_hdr_read(samfile);
         if (!get_RG_tag("SM", hdr->text, cells[i].sample_name)) {
-            std::cerr << "[Error] Each BAM file has to have exactly one SM tag." << std::endl << std::endl;
+            std::cerr << "[Error] Each BAM file has to have exactly one RG tag. Group cells " << std::endl;
+            std::cerr << "        belonging to the same sample by the SM tag." << std::endl;
+            std::cerr << "        Problematic file: " << conf.f_in[i].string() << std::endl << std::endl;
             goto print_usage_and_exit;
         }
-        if (!get_RG_tag("ID", hdr->text, cells[i].cell_name)) {
-            std::cerr << "[Error] Each BAM file has to have exactly one SM tag." << std::endl << std::endl;
+        if (!get_RG_tag("ID", hdr->text, cells[i].cell_name, /*allow_multiple_matches = */ true)) {
+            std::cerr << "[Error] Each BAM file has to have exactly one RG tag." << std::endl;
+            std::cerr << "        Problematic file: " << conf.f_in[i].string() << std::endl;
             goto print_usage_and_exit;
         }
-
-
         sam_close(samfile);
     }
 

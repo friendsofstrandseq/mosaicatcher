@@ -121,9 +121,12 @@ double sum(std::vector<double> const & vec)
 
 
 // from Delly
-inline bool get_RG_tag(std::string const & tag, std::string const& header, std::string& sample_name)
+inline bool get_RG_tag(std::string const & tag,
+                       std::string const& header, 
+                       std::string& output,
+                       bool allow_multiple_matches = false)
 {
-    std::set<std::string> smIdentifiers;
+    std::set<std::string> values;
     typedef std::vector<std::string> TStrParts;
     TStrParts lines;
     boost::split(lines, header, boost::is_any_of("\n"));
@@ -140,18 +143,26 @@ inline bool get_RG_tag(std::string const & tag, std::string const& header, std::
                 if (sp != std::string::npos) {
                     std::string field = itKV->substr(0, sp);
                     if (field == tag) {
-                        std::string rgSM = itKV->substr(sp+1);
-                        smIdentifiers.insert(rgSM);
+                        std::string value = itKV->substr(sp+1);
+                        values.insert(value);
                     }
                 }
             }
         }
     }
-    if (smIdentifiers.size() == 1) {
-        sample_name = *(smIdentifiers.begin());
+    if (values.size() == 1) {
+        output = *(values.begin());
         return true;
+    } else if (values.size() > 1) {
+        if (allow_multiple_matches) {
+            output = *(values.begin());
+            return true;
+        } else {
+            output = "";
+            return false;
+        }
     } else {
-        sample_name = "";
+        output = "";
         return false;
     }
 }
