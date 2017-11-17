@@ -8,7 +8,7 @@ include(ExternalProject)
 
 ### Disable in-source builds
 if("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
-   message(SEND_ERROR "In-source builds are not allowed. Please choose a different build path.")
+   message(FATAL_ERROR "In-source builds are not allowed. Please choose a different build path.")
 endif("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
 
 
@@ -47,11 +47,12 @@ set (MOSAIC_VERSION_MINOR 1)
 
 # 3. Get HTSlib version from git
 execute_process(
-    COMMAND git describe --always --dirty
-    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/htslib
+    COMMAND git describe --always
+    WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/htslib
     OUTPUT_VARIABLE HTSLIB_VERSION
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+set(HTSLIB_VERSION "1.3.1 ${HTSLIB_VERSION}")
 
 # 4. write version.hpp file
 configure_file (
