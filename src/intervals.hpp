@@ -1,3 +1,9 @@
+/*
+ Copyright (C) 2017 Sascha Meiers
+ Distributed under the MIT software license, see the accompanying
+ file LICENSE.md or http://www.opensource.org/licenses/mit-license.php.
+ */
+
 #ifndef intervals_hpp
 #define intervals_hpp
 

@@ -1,10 +1,8 @@
-//
-//  hmm.hpp
-//  hmm
-//
-//  Created by Sascha Meiers on 24/02/2017.
-//  Copyright © 2017 Sascha Meiers. All rights reserved.
-//
+/*
+ Copyright (C) 2017 Sascha Meiers
+ Distributed under the MIT software license, see the accompanying
+ file LICENSE.md or http://www.opensource.org/licenses/mit-license.php.
+ */
 
 #ifndef hmm_hpp
 #define hmm_hpp

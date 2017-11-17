@@ -1,11 +1,8 @@
-//
-//  calc_bins.cpp
-//  strseq
-//
-//  Created by Sascha Meiers on 23/03/2017.
-//  Copyright © 2017 Sascha Meiers. All rights reserved.
-//
-
+/*
+ Copyright (C) 2017 Sascha Meiers
+ Distributed under the MIT software license, see the accompanying
+ file LICENSE.md or http://www.opensource.org/licenses/mit-license.php.
+ */
 
 #include <iostream>
 #include <fstream>
