@@ -1,3 +1,9 @@
+/*
+ Copyright (C) 2017 Sascha Meiers
+ Distributed under the MIT software license, see the accompanying
+ file LICENSE.md or http://www.opensource.org/licenses/mit-license.php.
+ */
+
 #ifndef iocounts_hpp
 #define iocounts_hpp
 
@@ -13,7 +19,7 @@
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 
-#include "counts.hpp"       // Counter
+#include "counter.hpp"       // Counter
 #include "intervals.hpp"    // Interval
 
 

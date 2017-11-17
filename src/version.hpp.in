@@ -1,0 +1,12 @@
+#ifndef version_hpp
+#define version_hpp
+
+#define STRINGIFY(x) #x
+#define STRINGIFYMACRO(y) STRINGIFY(y)
+
+#define MOSAIC_VERSION_MAJOR @MOSAIC_VERSION_MAJOR@
+#define MOSAIC_VERSION_MINOR @MOSAIC_VERSION_MINOR@
+#define HTSLIB_VERSION @HTSLIB_VERSION@
+#define BOOST_VERSION @Boost_VERSION@
+
+#endif /* version_hpp */

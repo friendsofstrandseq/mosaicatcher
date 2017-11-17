@@ -1,6 +1,0 @@
-[submodule "src/htslib"]
-	path = src/htslib
-	url = https://github.com/samtools/htslib.git
-[submodule "src/boost"]
-	path = src/boost
-	url = https://github.com/boostorg/boost.git

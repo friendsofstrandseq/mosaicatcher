@@ -1,47 +1,75 @@
 # Processing Strand-seq data
 
+Structural Variant calling from single-cell Strand-seq* data.
+
+This software is in development.
+
+**Falconer E et al., 2012 ([PMID 23042453](https://www.ncbi.nlm.nih.gov/pubmed/23042453))*
+
+
 ## Installation
 
-```
-git clone --recursive https://github.com/friendsofstrandseq/mosaicatcher.git
-cd mosaicatcher
-make
-./src/main
-```
+Mosaicatcher can be built using [Cmake](https://cmake.org/) (v3.0) on **Linux** and **MacOS**. 
 
-If external dependencies ([boost](http://www.boost.org/) >= 1.63 and [HTSlib](https://github.com/samtools/htslib) >= 1.2.1)
-are already installed, you can checkout without `--recursive`. Here is an example using easybuild:
+It relies on two external dependecies
+
+ * [boost libraries](http://www.boost.org/) >= 1.50. This needs to be installed on your system
+ * [HTSlib](https://github.com/samtools/htslib) >= 1.3.1. Cmake should be able to install this for you
 
 ```
 git clone https://github.com/friendsofstrandseq/mosaicatcher.git
 cd mosaicatcher
-module load Boost HTSlib
-touch .htslib .boost
+mkdir build
+cd build
+cmake ../src
 make
-./src/main
+./mosaic --version
 ```
 
-
-## Strand-seq read counting and generation of QC plots
+## Strand-seq read counting and plotting
 
 Mosaicatcher counts Strand-seq reads and classifies strand states of each chromosome in each cell
-using a hidden Markov model.
+using a Hidden Markov Model.
 
-Choose between bins of fixed width (`-w`) or predefined bins (`-b`).
+Choose between bins of fixed width (`-w`) or predefined bins (`-b`). 
+Here is an example for bins with a fixed width of 200kb:
 
 ```
-./src/main -o counts.txt.gz -i counts.info -x data/exclude/GRCh38_full_analysis_set_plus_decoy_hla.exclude -w 200000 cell1.bam cell2.bam [...]
+./build/mosaic count \
+    -o counts.txt.gz \
+    -i counts.info \
+    -x data/exclude/GRCh38_full_analysis_set_plus_decoy_hla.exclude \
+    -w 200000 \
+    cell1.bam cell2.bam [...]
 ```
 
 To generate QC plots from these tables run
 
 ```
-Rscript R/qc.R counts.txt.gz counts.info counts.pdf
+Rscript R/qc.R \
+    counts.txt.gz \
+    counts.info \
+    counts.pdf
 ```
 
-## Data input
+### Data input
 
-Sequencing reads from a single cell should be grouped into a single BAM file and all reads within that BAM file will be treated as one single cell.
+Sequencing reads should be supplied in exactly one BAM file per single cell.
+Each BAM file must contain a single read group. Cells are grouped to 
+*samples* based on their `SM` tag.
 
-The BAM file must contain a single read group. Cells are grouped to samples based on this `SM` tag.
+
+## Strand-seq simulations
+
+Simulate strand-seq data and SVs on the level of binned counts. You are asked to specify an *SV config* file such as in the example `data/simulation/example.txt`.
+
+Then run
+
+```
+./build/mosaic simulate \
+    -o counts.txt.gz \
+	 svconfig.txt
+Rscript R/qc.R counts.txt.gz counts.pdf
+```
+
 
