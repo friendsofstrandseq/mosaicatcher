@@ -21,7 +21,7 @@
 #include <htslib/sam.h>
 
 
-struct Conf {
+struct Conf_calc_bins {
     boost::filesystem::path f_in;
     boost::filesystem::path f_out;
     boost::filesystem::path f_excl;
@@ -30,9 +30,9 @@ struct Conf {
     unsigned window;
 };
 
-int main(int argc, char **argv)
+int main_calc_bins(int argc, char **argv)
 {
-    Conf conf;
+    Conf_calc_bins conf;
     boost::program_options::options_description generic("Generic options");
     generic.add_options()
     ("help,?", "show help message")
@@ -40,7 +40,7 @@ int main(int argc, char **argv)
     ("window,w", boost::program_options::value<unsigned>(&conf.window)->default_value(100000), "window size to approximate")
     ("numreads,n", boost::program_options::value<unsigned>(&conf.num_reads)->default_value(20), "sample 1/n of reads (reduce memory)")
     ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("bins.bed"), "output file for bins")
-    ("exclude,x", boost::program_options::value<boost::filesystem::path>(&conf.f_excl), "Exclude chromosomes listed in this file (one per line)")
+    ("exclude,x", boost::program_options::value<boost::filesystem::path>(&conf.f_excl), "Exclude chromosomes (no regions!)")
     ;
 
     boost::program_options::options_description hidden("Hidden options");
@@ -64,7 +64,14 @@ int main(int argc, char **argv)
     if (vm.count("help") || (!vm.count("input-file"))) {
         std::cout << "Usage: " << argv[0] << " [OPTIONS] <wgs.bam>" << std::endl;
         std::cout << visible_options << "\n";
-        return 1;
+        if(vm.count("help")) {
+            std::cout << "Specify whole genome sequencing data (or a set of Strand-seq cells" << std::endl;
+            std::cout << "merged into a single file) which were sequenced under equal conditions." << std::endl;
+            std::cout << "This tool will create bins of variable width but which contian the same" << std::endl;
+            std::cout << "number of reads. This way we hope to overcome mappability issues." << std::endl;
+            std::cout <<  std::endl;
+        }
+        return vm.count("help") ? 0 : 1;
     }
 
     // Open bam file

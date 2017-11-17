@@ -132,9 +132,9 @@ int main_count(int argc, char **argv)
     ("verbose,v", "Be more verbose in the output")
     ("mapq,q", boost::program_options::value<int>(&conf.minMapQual)->default_value(10), "min mapping quality")
     ("window,w", boost::program_options::value<unsigned int>(&conf.window)->default_value(500000), "window size of fixed windows")
-    ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt.gz"), "output file for counts and strand state (gz)")
-    ("bins,b", boost::program_options::value<boost::filesystem::path>(&conf.f_bins), "variable bin file (BED format, mutually exclusive to -w)")
-    ("exclude,x", boost::program_options::value<boost::filesystem::path>(&conf.f_excl), "Exclude chromosomes (mutually exclusive to -b)")
+    ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.txt.gz"), "output file for counts + strand state (gz)")
+    ("bins,b", boost::program_options::value<boost::filesystem::path>(&conf.f_bins), "BED file with manual bins (disables -w). See also 'makebins'")
+    ("exclude,x", boost::program_options::value<boost::filesystem::path>(&conf.f_excl), "Exclude chromosomes and regions")
     ("info,i", boost::program_options::value<boost::filesystem::path>(&conf.f_info), "Write info about samples")
     ;
 

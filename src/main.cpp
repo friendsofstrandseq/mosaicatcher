@@ -22,6 +22,7 @@ Contact: Sascha Meiers (meiers@embl.de)
 #include "count.hpp"
 #include "segmentation.hpp"
 #include "simulate.hpp"
+#include "calc_bins.hpp"
 
 int main(int argc, char **argv)
 {
@@ -34,6 +35,9 @@ int main(int argc, char **argv)
 
     } else if (argc >= 2 && std::string(argv[1]) == "segment") {
         return main_segment(argc-1, argv+1);
+
+    } else if (argc >= 2 && std::string(argv[1]) == "makebins") {
+        return main_calc_bins(argc-1, argv+1);
 
     } else if (argc >= 2 && std::string(argv[1]) == "--version") {
         std::cout << "Mosaicatcher " << STRINGIFYMACRO(MOSAIC_VERSION_MAJOR) ;
@@ -52,10 +56,12 @@ int main(int argc, char **argv)
         std::cout << "    count       Count binned reads in Strand-seq cells" << std::endl;
         std::cout << "    segment     Find a segmentation across binned counts" << std::endl;
         std::cout << "    simulate    Simulate Strand-seq data" << std::endl;
+        std::cout << "    makebins    Create variable-width bins based on real data" << std::endl;
         std::cout << std::endl;
 
         if (argc >= 2 && std::string(argv[1]) == "--help") {
             std::cout << "Mosaicatcher calls structural variants (SVs) in Strand-seq data." << std::endl;
+            std::cout << "It is currently under development." << std::endl;
             std::cout << "This software comes with absolutely no warranty." << std::endl << std::endl;
             return 0;
         }
