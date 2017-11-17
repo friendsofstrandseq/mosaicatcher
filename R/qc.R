@@ -59,9 +59,10 @@ if (!is.null(f_info)) {
 add_overview_plot = T
 
 cairo_pdf(pdf_out, width=14, height=10, onefile = T)
+message("Writing plot ", pdf_out)
 if (add_overview_plot) {
 
-    message("Plotting an overview page")
+    message("* Plotting an overview page")
 
     n_samples = nrow(unique(d[, .(sample)]))
     n_cells   = nrow(unique(d[, .(sample,cell)]))
@@ -74,7 +75,7 @@ if (add_overview_plot) {
         geom_histogram(aes(end - start), bins = 50) +
         theme_minimal() +
         scale_y_log10(breaks = c(1,10,100,1000,10e3)) +
-        scale_x_continuous(breaks = pretty_breaks(5), labels = comma) +
+        scale_x_log10(labels = comma) +
         ggtitle(paste0("Bin sizes (", n_bins, " bins, mean ", round(mean_bin/1000,1), " kb)")) +
         xlab("Bin size (bp)")
 
@@ -145,7 +146,7 @@ for (s in unique(d$sample))
 {
     for (ce in unique(d[sample == s,]$cell))
     {
-        message(paste("Plotting sample", s, "cell", ce,"into",pdf_out))
+        message(paste("* Plotting sample", s, "cell", ce))
 
         e = d[sample == s & cell == ce,]
         
@@ -177,8 +178,10 @@ for (s in unique(d$sample))
 
         # Watson/Crick bars
         plt <- plt +
-            geom_bar(aes(y = -w, width=(end-start)), stat='identity', position = 'identity', fill='sandybrown') +
-            geom_bar(aes(y = c, width=(end-start)), stat='identity', position = 'identity', fill='paleturquoise4') +
+            geom_rect(aes(xmin=start, xmax=end, ymin = -w, ymax = 0), fill='sandybrown') +
+            geom_rect(aes(xmin=start, xmax=end, ymin = 0, ymax = c), fill='paleturquoise4') +
+            #geom_bar(aes(y = -w, width=(end-start)), stat='identity', position = 'identity', fill='sandybrown') +
+            #geom_bar(aes(y = c, width=(end-start)), stat='identity', position = 'identity', fill='paleturquoise4') +
             # Trim image to 2*median cov
             coord_flip(expand = F, ylim=c(-info_y_limit, info_y_limit)) +
             facet_grid(.~chrom, switch="x") +
