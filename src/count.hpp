@@ -385,14 +385,13 @@ int main_count(int argc, char **argv)
     // Write final counts + classification
     std::cout << "[Write] count table: " << conf.f_out.string() << std::endl;
     {
+        // TODO: why do I pass vector<pair>? I could make it two separate vectors. Just check where else the io function is called.
         struct sample_cell_name_wrapper {
-            std::vector<boost::filesystem::path> const & f_in;
             std::vector<CellInfo> const & cells;
-            sample_cell_name_wrapper(std::vector<boost::filesystem::path> const & f_in, std::vector<CellInfo> const & cells) :
-            f_in(f_in), cells(cells)
+            sample_cell_name_wrapper(std::vector<CellInfo> const & cells) : cells(cells)
             {}
             std::pair<std::string,std::string> operator[](size_t i) const {
-                return std::make_pair(cells[i].sample_name, f_in[i].stem().string());
+                return std::make_pair(cells[i].sample_name, cells[i].cell_name);
             }
         };
 
@@ -400,7 +399,7 @@ int main_count(int argc, char **argv)
                                    counts,
                                    bins,
                                    hdr->target_name,
-                                   sample_cell_name_wrapper(conf.f_in, cells)) )
+                                   sample_cell_name_wrapper(cells)) )
             return 1;
     }
     

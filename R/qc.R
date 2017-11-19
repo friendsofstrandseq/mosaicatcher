@@ -49,8 +49,9 @@ d = d[, chrom := factor(chrom, levels=as.character(c(1:22,'X','Y')), ordered = T
 
 # Read cell info file for bells and whistles
 if (!is.null(f_info)) {
-    info = fread(f_info, skip=12)
-    assert_that("sample" %in% colnames(info),
+    info = fread(f_info, skip=13)
+    assert_that(nrow(info)>0,
+                "sample" %in% colnames(info),
                 "cell" %in% colnames(info),
                 "pass1" %in% colnames(info),
                 "dupl" %in% colnames(info),
@@ -59,8 +60,6 @@ if (!is.null(f_info)) {
                 "nb_r" %in% colnames(info) && is.numeric(info$nb_r),
                 "nb_a" %in% colnames(info) && is.numeric(info$nb_a))
 }
-
-
 
 add_overview_plot = T
 
@@ -226,7 +225,11 @@ for (s in unique(d$sample))
 
         if (!is.null(f_info)) {
             Ie = info[sample == s & cell == ce,]
-            if(nrow(Ie) == 1 && Ie$pass1==1) {
+            if(nrow(Ie) < 1) {
+                message("  Cannot find additional info for ", s, " - ", ce)
+            } else if (Ie$pass1 != 1) {
+                #message("didn't pass QC: ", s, " - ", ce)
+            } else {
                 p = Ie$nb_p
                 r = Ie$nb_r
                 a = Ie$nb_a
