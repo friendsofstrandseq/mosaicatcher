@@ -24,7 +24,7 @@ if (length(args) < 2 || length(args) > 3) {
 
 #################
 # Check arguments
-zcat_command = "/usr/local/bin/zcat"
+zcat_command = "zcat"
 f_counts = args[1]
 
 if (length(args) == 3) {
@@ -54,7 +54,7 @@ if (grepl('\\.gz$',f_counts)) {
 assert_that(all(c("chrom","start","end","class","sample","cell","w","c") %in% colnames(counts)))
 #counts <- counts[ grepl(chrom_regex, chrom),]
 setkey(counts, sample, cell, chrom)
-
+counts[, sample_cell := paste(sample, "-", cell)]
 
 #########################################
 # Read SV probability file, if specified.
@@ -152,7 +152,7 @@ for (CHROM in unique(counts[, chrom])) {
         plt <- plt +
             geom_rect(aes(xmin = start, xmax=end, ymin=0, ymax = -w), fill='sandybrown') +
             geom_rect(aes(xmin = start, xmax=end, ymin=0, ymax =  c), fill='paleturquoise4') +
-            facet_wrap(~ sample + cell, ncol = 1, labeller = label_wrap_gen(multi_line=FALSE)) +
+            facet_wrap(~ sample_cell, ncol = 1) +
             ylab("Watson | Crick") + xlab(NULL) +
             scale_x_continuous(breaks = pretty_breaks(12), labels = format_Mb) +
             scale_y_continuous(breaks = pretty_breaks(3)) + 
@@ -160,7 +160,8 @@ for (CHROM in unique(counts[, chrom])) {
             theme_minimal() +
             theme(panel.spacing = unit(0, "lines"),
                   axis.ticks.x = element_blank(),
-                  #strip.background = element_rect(fill = NA, colour=NA), 
+                  strip.background = element_rect(color = "#eeeeee", fill = "#eeeeee"),
+                  strip.text = element_text(size = 5),
                   legend.position = "bottom") +
             ggtitle(paste("data:", basename(f_counts), "chromosome:", CHROM))
         
