@@ -41,7 +41,7 @@ if (grepl('\\.pdf$', f_out)) f_out = substr(f_out, 1, nchar(f_out)-4)
 # Other global settings
 # chrom_regex <- '^chr[1-9XY][0-9]?$'
 format_Mb   <- function(x) {paste(comma(x/1e6), "Mb")}
-cells_per_page <- 10
+cells_per_page <- 8
 
 
 #############
