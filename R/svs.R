@@ -25,10 +25,6 @@ print_usage = function() {
     message("example.                                                                        ")
 }
 
-args = c("/Volumes/korbel/meiers/projects/20171024_strandseq_hackathon/unified_pipeline/counts/D2Rfb.100000_fixed.txt.gz",
-         #"/Volumes/korbel/meiers/projects/20171024_strandseq_hackathon/unified_pipeline/nonSVcellsGTprobs.reformatted2.txt",
-         "/Volumes/korbel/meiers/projects/20171024_strandseq_hackathon/unified_pipeline/segmentation/D2Rfb.100000_fixed.txt=0.8",
-         "/Volumes/korbel/meiers/projects/20171024_strandseq_hackathon/unified_pipeline/nonSVcellsGTprobs.plot")
 
 args = commandArgs(trailingOnly = T)
 if (length(args) < 2 || length(args) > 3) {
@@ -38,7 +34,7 @@ if (length(args) < 2 || length(args) > 3) {
 
 #################
 # Check arguments
-zcat_command = "/usr/local/bin/zcat"
+zcat_command = "zcat"
 format_Mb   <- function(x) {paste(comma(x/1e6), "Mb")}
 cells_per_page <- 8
 
