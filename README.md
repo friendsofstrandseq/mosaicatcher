@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/friendsofstrandseq/mosaicatcher.svg?branch=master)](https://travis-ci.org/friendsofstrandseq/mosaicatcher)
+
 # Processing Strand-seq data
 
 Structural Variant calling from single-cell Strand-seq* data.
