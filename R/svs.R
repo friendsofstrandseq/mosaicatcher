@@ -168,7 +168,7 @@ if (!is.null(f_other)) {
 
 
             message("   -> detected segmentation file")
-            segments = other[, .SD[k == quantile(k, f_seg_quantile, type = 2)], by = chrom]
+            segments = other[, .SD[k == quantile(1:max(k), f_seg_quantile, type = 3)], by = chrom]
             assert_that(all(segments[, .N == k[1], by = chrom]$V1))
             segments[, SV_class := rep(paste0("seg",1:3), ceiling(.N/3))[1:.N], by = chrom]
 
