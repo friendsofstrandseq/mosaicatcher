@@ -210,7 +210,7 @@ for (CHROM in unique(counts[, chrom])) {
     cairo_pdf(paste0(f_out,".",CHROM,".pdf"), width=14, height=10, onefile = T)
 
     i = 1
-    while (i < n_cells) {
+    while (i <= n_cells) {
 
 
         # Subset to this set of cells:
