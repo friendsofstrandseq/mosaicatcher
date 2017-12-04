@@ -11,6 +11,7 @@
 #include <vector>
 #include <set>
 #include <limits>       // MAX_UNSIGNED
+#include <algorithm>    // std::all_of
 
 #include <boost/iostreams/stream.hpp>
 #include <boost/iostreams/stream_buffer.hpp>
@@ -304,6 +305,21 @@ bool read_counts_gzip(TString const & f_in,
     return true;
 }
 
+
+std::vector<unsigned> get_good_cells(std::vector<TGenomeCounts> const & counts)
+{
+    std::vector<unsigned> good_cells;
+    for (unsigned i = 0; i < counts.size(); ++i) {
+        if (!std::all_of(counts[i].begin(),
+                         counts[i].end(),
+                         [](Counter const & x) { return (x.label == "None");}))
+            good_cells.push_back(i);
+    }
+    // good_cells must be <= counts and sorted !!
+    assert(std::is_sorted(good_cells.begin(), good_cells.end()));
+    assert(good_cells.size() <= counts.size());
+    return good_cells;
+}
 
 
 }
