@@ -80,8 +80,8 @@ manual_colors = c(ref = "#bbbbbb",
 
 
 if (!is.null(f_other)) {
-    
-    
+
+
     # Prepare 'other' table - either SV prob file or segmentation file
     f_seg_quantile = 0.5
     splitted = unlist(strsplit(f_other, '=', fixed = T))
@@ -94,8 +94,8 @@ if (!is.null(f_other)) {
             message("Ignoring everything after first '=' in ", f_other)
         }
     }
-    
-    
+
+
     # Read 'other' table - only then we can find out which type of data it is
     message(" * Reading addtional data ", f_other, "...")
     if (grepl('\\.gz$',f_other)) {
@@ -108,8 +108,8 @@ if (!is.null(f_other)) {
                 "start" %in% colnames(other),
                 "end"   %in% colnames(other))
 
-    
-    
+
+
     ##################
     # Switch data type
     #
@@ -164,7 +164,7 @@ if (!is.null(f_other)) {
 
 
     ### Seg file
-    } else if (all(c("k","breakpoint") %in% colnames(other))) {
+    } else if (all(c("k") %in% colnames(other))) {
 
 
             message("   -> detected segmentation file")
@@ -181,7 +181,7 @@ if (!is.null(f_other)) {
     ### other, unknown input
     } else {
             message("I don't understand the file ", f_other)
-            message("Segmentation files need to contain the columns k, breakpoint, chorm, start, end.")
+            message("Segmentation files need to contain the columns k, chrom, start, end.")
             message("SV prob files need to have columns chrom, start, end, sample, cell and then columns")
             message("for the different SV probabilities, called p_ref, p_inv_het, p_del_hom, ...")
             print_usage()
@@ -225,10 +225,10 @@ for (CHROM in unique(counts[, chrom])) {
         }
 
         plt <- ggplot(local_counts)
-        
+
         # Add GT colors:
         if(nrow(local_background_colors)>0) {
-            plt <- plt + 
+            plt <- plt +
                 geom_rect(data = local_background_colors, alpha = 0.5, size = 0.1,
                           aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf, fill = SV_class)) +
                 scale_fill_manual(values = manual_colors)
@@ -240,7 +240,7 @@ for (CHROM in unique(counts[, chrom])) {
             facet_wrap(~ sample_cell, ncol = 1) +
             ylab("Watson | Crick") + xlab(NULL) +
             scale_x_continuous(breaks = pretty_breaks(12), labels = format_Mb) +
-            scale_y_continuous(breaks = pretty_breaks(3)) + 
+            scale_y_continuous(breaks = pretty_breaks(3)) +
             coord_cartesian(ylim = c(-y_lim, y_lim)) +
             theme_minimal() +
             theme(panel.spacing = unit(0, "lines"),
