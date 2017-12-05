@@ -38,6 +38,9 @@ using count::Counter;
  *
  * We apply an optimal multivariate segmentation algorithm to find segments
  * across all cells simultaneously.
+ *
+ * See `main_segment` for a description of which steps are done.
+ *
  * @todo Write description
  */
 
@@ -60,13 +63,28 @@ template <typename TMat> void print_mat(TMat const & G) {
     }
 }
 
+template <typename Printable>
+std::ostream& operator<< (std::ostream& stream, Matrix<Printable> const & m) {
+    if (m.size() == 0 || m[0].size() == 0)
+        return (stream << "[EMPTY MATRIX]" << std::endl);
+    for (unsigned r = 0; r < m.size(); ++r) {
+        //stream << std::setw(8) << std::setprecision(2) << m[r][0];
+        for (unsigned c = 0; c < m[r].size(); ++c)
+            stream << std::setw(10) << std::setprecision(4) << m[r][c];
+        stream << std::endl;
+    }
+    return stream;
+}
+
+
+
 /**
- * @fn bool optimal_segment_dp(Matrix<float> const & cost, int max_cp, Matrix<int> & breakpoints, std::vector<float> & sse)
+ * @fn bool optimal_segment_dp(Matrix<double> const & cost, int max_cp, Matrix<int> & breakpoints, std::vector<double> & sse)
  * @ingroup segmentation
  * Find optimal segmentation based on a cost matrix.
  *  
  * This is a dynamic programming algorithm to find an optimal segmentation
- * in a cost matrix (see calculate_cost_matrix). It calculates a max_cp x N
+ * in a cost matrix (see `calculate_cost_matrix`). It calculates a max_cp x N
  * matrix of optimal segmentation cost (internally) and breakpoints (returned
  * via `breakpoints`).
  *
@@ -81,12 +99,12 @@ template <typename TMat> void print_mat(TMat const & G) {
  * @param cost Cost matrix (see `calculate_cost_matrix`)
  * @param max_cp Maximum number of breakpoints (<= N)
  * @param breakpoints Breakpoints for k=1..max_cp will be written in here
- * @param sse Something similar to BIC is written in here. Might be useful for model selection.
+ * @param sse sum of squared error value written here.
  */
-bool optimal_segment_dp(Matrix<float> const & cost,
+bool optimal_segment_dp(Matrix<double> const & cost,
                   int max_cp,
                   Matrix<int> & breakpoints,
-                  std::vector<float> & sse)
+                  std::vector<double> & sse)
 {
     // Determine max_k and N from cost matrix
     unsigned max_k  = (unsigned)cost.size();
@@ -105,24 +123,25 @@ bool optimal_segment_dp(Matrix<float> const & cost,
     }
 
     // cost of optimal segmentation matrix
-    Matrix<float> dp(N, std::vector<float>(max_cp, -1));
+    Matrix<double> dp(N, std::vector<double>(max_cp, -1));
 
     // backtrack matrix mt
     Matrix<int>    mt(N, std::vector<int>(max_cp - 1, -1));
 
-    // Initialization: dp[n][0] is just cost[n][0]
+    // Initialization: dp[i][0] is just cost[i][0]
     for (unsigned r = 0; r < max_k; ++r)
         dp[r][0] = cost[r][0];
     for (unsigned r = max_k; r < N; ++r)
         dp[r][0] = -1;
 
 
-    // Dynamic programming: column-wise
+    // Dynamic programming: column-wise (number of change points).
     for (unsigned cp=1; cp < max_cp; ++cp)
     {
+        // row j = position j
         for (unsigned j=0; j<N; ++j)
         {
-            float   z_min = -1;
+            double   z_min = -1;
             unsigned i_min =  j;
             int      j0    = (j<max_k) ? j : max_k;
 
@@ -130,14 +149,14 @@ bool optimal_segment_dp(Matrix<float> const & cost,
             for (unsigned k=0; k<j0; ++k)
             {
                 // Best segmentation from 0 to j-k-1 with cp-1 change points
-                float mI_prev_col = dp[j-k-1][cp-1];
+                double mI_prev_col = dp[j-k-1][cp-1];
 
                 // Cost of segment from j-k to j
-                float cost_seg    = cost[k][j-k];
+                double cost_seg    = cost[k][j-k];
 
                 // Keep value with minimal cost and set mt matriv=x
                 // Note that values < 0 represent positive infinity
-                if (mI_prev_col > 0 && cost_seg > 0)
+                if (mI_prev_col >= 0 && cost_seg >= 0)
                 {
                     if (z_min < 0 || mI_prev_col + cost_seg < z_min) {
                         z_min = mI_prev_col + cost_seg;
@@ -150,17 +169,18 @@ bool optimal_segment_dp(Matrix<float> const & cost,
         } /* for j */
     } /* for cp */
 
+
     // breakpoints: Row cp contains the breakpoints for a segmentation with cp breakpoints.
     // breakpoints[cp][cp] is always N
-    sse     = std::vector<float>(max_cp);
+    sse     = std::vector<double>(max_cp);
     breakpoints = Matrix<int>(max_cp, std::vector<int>(max_cp, -1)); // important: initialize to -1
 
     for (unsigned cp = 0; cp < max_cp; ++cp)
     {
         // just write down SSE
-        float z = dp[N-1][cp];
-        //sse[cp] = (z > 0) ? -(float)N / 2.0 * (1 + log(2*M_PI) + log(z / N)) : -1e10;  // 1e10 as a really really low value
-        sse[cp] = (z > 0) ? z/N : 1e10;  // 1e10 as a really really high value
+        double z = dp[N-1][cp];
+        //sse[cp] = (z > 0) ? -(double)N / 2.0 * (1 + log(2*M_PI) + log(z / N)) : -1e10;  // 1e10 as a really really low value
+        sse[cp] = (z >= 0) ? z : 1e10;  // 1e10 as a really really high value
 
         // Backtrack to get breakpoints
         // i is always the oosition of the changepoint to the right (???)
@@ -176,7 +196,7 @@ bool optimal_segment_dp(Matrix<float> const & cost,
 
 
 /**
- * @fn Matrix<float> calculate_cost_matrix(std::vector<float> const & data, int max_k)
+ * @fn Matrix<double> calculate_cost_matrix(std::vector<double> const & data, int max_k)
  * @ingroup segmentation
  * Calculate segmentation cost matrix on a single vector.
  *
@@ -184,41 +204,44 @@ bool optimal_segment_dp(Matrix<float> const & cost,
  * (https://github.com/Bioconductor-mirror/tilingArray/blob/master/R/costMatrix.R).
  * This is the version that runs on a single vector.
  *
- * @todo Profile this algorith, to see where time is spent.
+ * @todo Profile this algorithm, to see where time is spent.
  * @todo Potentially replace calculate_cost_matrix_single by a faster version using
  *       boost UBLAS vectors and matrices.
  * 
  * @param data Single data vector.
  * @param max_k Maximum number of bins for each segment. max_k <= N.
  */
-Matrix<float> calculate_cost_matrix(std::vector<float> const & data,
+Matrix<double> calculate_cost_matrix(std::vector<double> const & data,
                                                 int max_k)
 {
     // See https://www.bioconductor.org/packages/devel/bioc/vignettes/tilingArray/inst/doc/costMatrix.pdf
     // for an explanation of the algebra
+
+    double ZERO_THR = 1.1e-10;
+
     unsigned N = (unsigned)data.size();
-    std::vector<float> cr(N);
-    std::vector<float> cq(N);
+    std::vector<double> cr(N);
+    std::vector<double> cq(N);
 
     // cr = cumsum(data)
     std::partial_sum(data.begin(), data.end(), cr.begin());                             // O(N)
 
     // cq = cumsum(data^2)
-    std::transform(data.begin(), data.end(), cq.begin(), [](float u){return u*u;});     // O(N)
+    std::transform(data.begin(), data.end(), cq.begin(), [](double u){return u*u;});     // O(N)
     std::partial_sum(cq.begin(), cq.end(), cq.begin());                                 // O(N)
 
     // Cost matrix G
-    Matrix<float> G(max_k, std::vector<float>(N, -1));                                  // O(N * maxk)
+    Matrix<double> G(max_k, std::vector<double>(N, -1));                                  // O(N * maxk)
 
-    // Initialization:
+    // Initialization for segments of lengths 1...max_k at position 0.
     for (unsigned k = 0; k < max_k; ++k)                                                // O(maxk)
-        G[k][0] = cq[k] - cr[k]*cr[k]/(float)(k+1);
+        G[k][0] = cq[k] - cr[k]*cr[k]/(double)(k+1);
 
     // Iterate per row (k)
     for (unsigned k = 1; k <= max_k && k <= N-1; ++k)                                   // O( maxk * ...
     {
-        std::vector<float> cqk(N-k, -1);                                                //           ... N
-        std::vector<float> crk(N-k, -1);                                                //           ... N
+        std::vector<double> cqk(N-k, -1);                                                //           ... N
+        std::vector<double> crk(N-k, -1);                                                //           ... N
 
         for (unsigned i = 0; i < N-k; ++i) {                                            //           ... N
             cqk[i] = cq[i+k] - cq[i];
@@ -230,7 +253,11 @@ Matrix<float> calculate_cost_matrix(std::vector<float> const & data,
             unsigned i = j - 1;
             assert(cqk[i]>=0);
             assert(crk[i]>=0);
-            G[k-1][j] = cqk[i] - crk[i]*crk[i]/(float)k;
+            G[k-1][j] = cqk[i] - crk[i]*crk[i]/(double)k;
+
+            // force small values to zero
+            if (G[k-1][j] < ZERO_THR)
+                G[k-1][j] = 0;
         }
     }
 
@@ -240,7 +267,7 @@ Matrix<float> calculate_cost_matrix(std::vector<float> const & data,
 
 
 /**
- * @fn calculate_cost_matrix(Matrix<float> const & data, int max_k, Matrix<float> & G)
+ * @fn calculate_cost_matrix(Matrix<double> const & data, int max_k, Matrix<double> & G)
  * @ingroup segmentation
  * Calculate segmentation cost matrix.
  *
@@ -264,9 +291,9 @@ Matrix<float> calculate_cost_matrix(std::vector<float> const & data,
  * 
  * @addtogroup segmentation
  */
-bool calculate_cost_matrix(Matrix<float> const & data,                         // TOTAL O ( J * N * maxk)
+bool calculate_cost_matrix(Matrix<double> const & data,                         // TOTAL O ( J * N * maxk)
                                     int max_k,
-                                    Matrix<float> & G)
+                                    Matrix<double> & G)
 {
 
     unsigned J  = (unsigned)data.size();        // number of cells or strands
@@ -285,11 +312,11 @@ bool calculate_cost_matrix(Matrix<float> const & data,                         /
     }
 
 
-    G = Matrix<float>(max_k, std::vector<float>(N, -1));
+    G = Matrix<double>(max_k, std::vector<double>(N, 0));
     for (unsigned s = 0; s < J; ++s) {
 
         // Get cost of this one sample
-        Matrix<float> cost_j = calculate_cost_matrix(data[s], max_k);
+        Matrix<double> cost_j = calculate_cost_matrix(data[s], max_k);
 
         // Add to total cost
         for (unsigned i=0; i<max_k; ++i)
@@ -301,7 +328,7 @@ bool calculate_cost_matrix(Matrix<float> const & data,                         /
     // Finally, divide by J
     for (unsigned i=0; i<max_k; ++i)
         for (unsigned j=0; j<N; ++j)
-            G[i][j] /= (float)J;
+            G[i][j] /= (double)J;
 
     return true;
 }
@@ -433,40 +460,25 @@ int main_segment(int argc, char** argv) {
                                             static_cast<unsigned>(ceil((float)chrom_size/1e6 * conf.max_bp_per_Mb))),
                                    N-1);
 
-        std::cout << "Running segmentation on "
-                  << chromosomes[chrom]
-                  << ": "
-                  << (chrom_size/1e5)/(float)10
-                  << "Mb (N = "
-                  << N
-                  << "), longest segment ~= "
-                  << (max_k * window_size/1e5)/(float)10
-                  << "Mb (max_k = "
-                  << max_k
-                  << "), max. number of breakpoints = "
-                  << max_cp
-                  << std::endl;
-
-
 
         // Put all cells into data:
         t1 = std::chrono::steady_clock::now();
-        Matrix<float> data;
+        Matrix<double> data;
         // temporarily write counts into this vector before adding to data
-        std::vector<float> tmp(N);
+        std::vector<double> tmp(N);
         for (unsigned i = 0; i < counts.size(); ++i)
         {
-            float sample_mean = mean_per_sample[i];
+            double sample_mean = mean_per_sample[i];
 
             std::transform(counts[i].begin() + chrom_map[chrom],
                            counts[i].begin() + chrom_map[chrom] + N,
                            tmp.begin(),
-                           [sample_mean](Counter const & c){return (float) c.watson_count / sample_mean;});
+                           [sample_mean](Counter const & c){return (double) c.watson_count / sample_mean;});
             data.push_back(tmp);
             std::transform(counts[i].begin() + chrom_map[chrom],
                            counts[i].begin() + chrom_map[chrom] + N,
                            tmp.begin(),
-                           [sample_mean](Counter const & c){return (float) c.crick_count / sample_mean;});
+                           [sample_mean](Counter const & c){return (double) c.crick_count / sample_mean;});
             data.push_back(tmp);
         }
         tmp.clear();
@@ -477,7 +489,7 @@ int main_segment(int argc, char** argv) {
 
         // New Cost matrix
         t1 = std::chrono::steady_clock::now();
-        Matrix<float> new_cost;
+        Matrix<double> new_cost;
         calculate_cost_matrix(data, max_k, new_cost);
         t2 = std::chrono::steady_clock::now();
         std::cout << "    Cost matrix (" << max_k << " x " << N << ") took " << std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count() << " seconds." << std::endl;
@@ -486,7 +498,7 @@ int main_segment(int argc, char** argv) {
         // Find optimal segmentation
         t1 = std::chrono::steady_clock::now();
         Matrix<int> breakpoints;
-        std::vector<float> sse;
+        std::vector<double> sse;
         if (!optimal_segment_dp(new_cost, max_cp, breakpoints, sse))
             std::cerr << "[ERROR] Segmentation failed" << std::endl;
         t2 = std::chrono::steady_clock::now();
