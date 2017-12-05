@@ -375,6 +375,7 @@ int main_segment(int argc, char** argv) {
     ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(100000000), "maximum segment length")
     ("penalize-none", boost::program_options::value<float>(&conf.none_penalty)->implicit_value(100), "Penalize segments through removed bins (which are marked by 'None' in the counts table).")
     ("remove-none", "Remove segments through removed bins before segmentation. Mutually exclusive with --penalize-none.")
+    ("normalize-cells", "Instead of using raw counts for each strand, normalize them per cell. This way all cells contribute equally.")
     ("do-not-remove-bad-cells", "Keep all cells (by default, cells which are marked 'None' in all bins get removed")
     ;
 
@@ -599,6 +600,7 @@ int main_segment(int argc, char** argv) {
                                             static_cast<unsigned>(ceil((float)chrom_size/1e6 * conf.max_bp_per_Mb))),
                                    N-1);
 
+
         // Skip empty chromosomes
         if (N <= 1) continue;
 
@@ -607,18 +609,32 @@ int main_segment(int argc, char** argv) {
         Matrix<double> data;
         for (unsigned i = 0; i < counts.size(); ++i)
         {
-            double sample_mean = mean_per_sample[i];
-            std::vector<double> tmp(N);
-            std::transform(counts[i].begin() + chrom_map[chrom],
-                           counts[i].begin() + chrom_map[chrom] + N,
-                           tmp.begin(),
-                           [sample_mean](Counter const & c){return (double) c.watson_count / sample_mean;});
-            data.push_back(tmp);
-            std::transform(counts[i].begin() + chrom_map[chrom],
-                           counts[i].begin() + chrom_map[chrom] + N,
-                           tmp.begin(),
-                           [sample_mean](Counter const & c){return (double) c.crick_count / sample_mean;});
-            data.push_back(tmp);
+            if (vm.count("normalize-cells")) {
+                double sample_mean = mean_per_sample[i];
+                std::vector<double> tmp(N);
+                std::transform(counts[i].begin() + chrom_map[chrom],
+                               counts[i].begin() + chrom_map[chrom] + N,
+                               tmp.begin(),
+                               [sample_mean](Counter const & c){return (double) c.watson_count / sample_mean;});
+                data.push_back(tmp);
+                std::transform(counts[i].begin() + chrom_map[chrom],
+                               counts[i].begin() + chrom_map[chrom] + N,
+                               tmp.begin(),
+                               [sample_mean](Counter const & c){return (double) c.crick_count / sample_mean;});
+                data.push_back(tmp);
+            } else {
+                std::vector<double> tmp(N);
+                std::transform(counts[i].begin() + chrom_map[chrom],
+                               counts[i].begin() + chrom_map[chrom] + N,
+                               tmp.begin(),
+                               [](Counter const & c){return (double) c.watson_count;});
+                data.push_back(tmp);
+                std::transform(counts[i].begin() + chrom_map[chrom],
+                               counts[i].begin() + chrom_map[chrom] + N,
+                               tmp.begin(),
+                               [](Counter const & c){return (double) c.crick_count;});
+                data.push_back(tmp);
+            }
         }
 
 
@@ -679,6 +695,8 @@ int main_segment(int argc, char** argv) {
 
 
 
+
+        
         // number of none bins
         unsigned num_none = 0;
         for (auto stretch : none_stretches[chrom])
