@@ -337,25 +337,51 @@ bool calculate_cost_matrix(Matrix<double> const & data,                         
 struct Conf_segment {
     boost::filesystem::path f_in;
     boost::filesystem::path f_out;
+    boost::filesystem::path f_cost_mat;
     float max_bp_per_Mb;
+    float none_penalty;
+    float merge_threshold;
     unsigned max_segment_length;
+    bool remove_bad_cells;
 };
 
 
+/**
+ * @fn main_segment(int argc, char** argv)
+ * @ingroup segmentation
+ * Main program for segmentation
+ *
+ * 1. Read Strand-seq counts from table, incl. 'class' column
+ * 2. Remove cells which are all 'none' (opt-out).
+ * 3. Detect stretches of removed bins (from 'None' in the counts table) and ...
+ *    1. do nothing special,
+ *    2. penalize these regions in the cost matrix, or
+ *    3. remove these regions from the data before segmentation.
+ * 4. Finally, run dynamic programming segmentation and report optimal segments
+ *    for a different numbers of change points.
+ */
 int main_segment(int argc, char** argv) {
 
     Conf_segment conf;
-    boost::program_options::options_description generic("Generic options");
-    generic.add_options()
+    boost::program_options::options_description po_generic("Generic options");
+    po_generic.add_options()
     ("help,?", "show help message")
     ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.bed"), "output file for counts")
-    ("max_bp,m", boost::program_options::value<float>(&conf.max_bp_per_Mb)->default_value(1), "maximum number of breakpoints per Mb")
-    ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(100000000), "maximum segment length")
     ;
 
-    boost::program_options::options_description hidden("Hidden options");
-    hidden.add_options()
+    boost::program_options::options_description po_segmentation("Segmentation options");
+    po_segmentation.add_options()
+    ("max_bp,m", boost::program_options::value<float>(&conf.max_bp_per_Mb)->default_value(0.5), "maximum number of breakpoints per Mb")
+    ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(100000000), "maximum segment length")
+    ("penalize-none", boost::program_options::value<float>(&conf.none_penalty)->implicit_value(100), "Penalize segments through removed bins (which are marked by 'None' in the counts table).")
+    ("remove-none", "Remove segments through removed bins before segmentation. Mutually exclusive with --penalize-none.")
+    ("do-not-remove-bad-cells", "Keep all cells (by default, cells which are marked 'None' in all bins get removed")
+    ;
+
+    boost::program_options::options_description po_hidden("Hidden options");
+    po_hidden.add_options()
     ("input-file", boost::program_options::value<boost::filesystem::path>(&conf.f_in), "mosaicatcher count file")
+    ("cost-matrix,c", boost::program_options::value<boost::filesystem::path>(&conf.f_cost_mat), "write cost matrix to file")
     ;
 
     boost::program_options::positional_options_description pos_args;
@@ -363,14 +389,16 @@ int main_segment(int argc, char** argv) {
 
 
     boost::program_options::options_description cmdline_options;
-    cmdline_options.add(generic).add(hidden);
+    cmdline_options.add(po_generic).add(po_segmentation).add(po_hidden);
     boost::program_options::options_description visible_options;
-    visible_options.add(generic);
+    visible_options.add(po_generic).add(po_segmentation);
     boost::program_options::variables_map vm;
 
     boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(pos_args).run(), vm);
     boost::program_options::notify(vm);
 
+
+    // Check arguments
     if (vm.count("help") || !vm.count("input-file")) {
 
         std::cout << std::endl;
@@ -380,21 +408,38 @@ int main_segment(int argc, char** argv) {
         std::cout << std::endl;
         std::cout << "Usage:   " << argv[0] << " [OPTIONS] counts.txt.gz" << std::endl << std::endl;
         std::cout << visible_options << std::endl;
-        std::cout << vm.count("help") << std::endl;
         return vm.count("help") ? 0 : 1;
     }
+    conf.remove_bad_cells = true;
+    if (vm.count("do-not-remove-bad-cells"))
+        conf.remove_bad_cells = false;
+    if (vm.count("penalize-none") && vm.count("remove-none")) {
+        std::cerr << "[Error] --penalize-none and --remove-none are mutually exclusive." << std::endl;
+        return 1;
+    }
+
+
+
+    /////////////////////////////////////////////////////////// global variables
+    /* counts/cells */
+    std::vector<std::pair<std::string,std::string>> sample_cell_names;
+    std::vector<TGenomeCounts> counts;
+
+    /* bins */
+    std::vector<std::string> chromosomes;
+    std::vector<Interval> bins;
+    std::vector<int32_t>  chrom_map;
+    std::vector<unsigned> good_bins;
+    std::vector<int32_t>  good_map;
+    /////////////////////////////////////////////////////////// global variables
+
 
     std::chrono::steady_clock::time_point t1, t2, t3, t4;
 
 
-    // Reading count file
-    std::vector<std::pair<std::string,std::string>> sample_cell_names;
-    std::vector<std::string> chromosomes;
-    std::vector<Interval> bins;
-    std::vector<TGenomeCounts> counts;
-
+    // 1. Reading count file
     t1 = std::chrono::steady_clock::now();
-    std::cout << "Reading file " << conf.f_in.string() << " (this is a bit slow)..." << std::endl;
+    std::cout << "[Info] Reading file " << conf.f_in.string() << " (this is a bit slow)..." << std::endl;
     if (!io::read_counts_gzip(conf.f_in.string(),
                               counts,
                               chromosomes,
@@ -402,50 +447,125 @@ int main_segment(int argc, char** argv) {
                               bins))
         return 1;
 
+    t2 = std::chrono::steady_clock::now();
+    auto time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+    std::cout << "[Info] " << counts.size() << " cells found." << std::endl;
+    std::cout << "[Time] Reading took " << time.count() << " seconds." << std::endl;
+
+    // If more than one sample - give a warning
+    std::set<std::string> samples;
+    for (auto s_c : sample_cell_names) samples.insert(s_c.first);
+    if (samples.size()>1)
+        std::cerr << "[Warning] Found > 1 sample, but Samples will be ignored for now. All cells will be treated as being from the first sample" << std::endl;
+
 
     // Create chromosome map
-    std::vector<int32_t> chrom_map(chromosomes.size());
+    chrom_map = std::vector<int32_t>(chromosomes.size());
     if (!make_chrom_map(bins, chrom_map)) {
         std::cerr << "[Error] Something is wrong with the intervals" << std::endl;
         return 2;
     }
-    // add last element for easy calculation of number of bins
     chrom_map.push_back((int32_t)bins.size());
-
-    t2 = std::chrono::steady_clock::now();
-    auto time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-    std::cout << "    Read " << bins.size() << " intervals across " << chromosomes.size() << " chromosomes." << std::endl;
-    std::cout << "    In total " << counts.size() << " cells" << std::endl;
-    std::cout << "    This took " << time.count() << " seconds." << std::endl;
+    std::cout << "[Info] " << bins.size() << " intervals across " << chromosomes.size() << " chromosomes." << std::endl;
 
 
-    // Determine window size
+    // 2. remove bad cells (i.e. with all None).
+    std::vector<unsigned> good_cells = io::get_good_cells(counts);
+    if (conf.remove_bad_cells) {
+        unsigned prev = counts.size();
+
+        for (unsigned i = 0; i < good_cells.size(); ++i) {
+            counts[i] = counts[good_cells[i]];
+        }
+        counts.resize(good_cells.size()); // should
+        std::cout << "[Info] Removed " << prev - counts.size() << " bad cells, leaving " << counts.size() << " good ones" << std::endl;
+    }
+
+
+
+    // Determine window size & Mean count per sample
     unsigned window_size;
+    std::vector<float> mean_per_sample(counts.size());
     {
         TMeanVarAccumulator<float> mean_acc;
         for (auto bin : bins)
             mean_acc((float)(bin.end - bin.start));
         window_size = (unsigned) boost::accumulators::mean(mean_acc);
+
+        for (unsigned i=0; i<counts.size(); ++i) {
+            TMeanVarAccumulator<float> mean_acc;
+            for (auto j = 0; j < bins.size(); ++j)
+                mean_acc((counts[i][j]).watson_count + (counts[i][j]).crick_count);
+            mean_per_sample[i] = boost::accumulators::mean(mean_acc);
+        }
     }
 
 
-    // Mean count per sample
-    std::vector<float> mean_per_sample(counts.size());
-    for (unsigned i=0; i<counts.size(); ++i) {
-        TMeanVarAccumulator<float> mean_acc;
-        for (auto j = 0; j < bins.size(); ++j)
-            mean_acc((counts[i][j]).watson_count + (counts[i][j]).crick_count);
-        mean_per_sample[i] = boost::accumulators::mean(mean_acc);
+
+
+
+    // Determine `good_bins` from stretches of 'None' in the data.
+    // This is more flexible than using the count data, because it allows
+    // the user to alter the labels of certain regions!
+    std::vector<std::pair<unsigned,unsigned>> stretches;
+    if (vm.count("penalize-none") || vm.count("remove-none"))
+    {
+        // Finding 'none' stretches
+        for (int32_t chrom = 0; chrom < chromosomes.size(); ++chrom)
+        {
+            unsigned pos = chrom_map[chrom];
+            while (pos < chrom_map[chrom+1]) {
+                if (counts[0][pos].label != "None") {
+                    good_bins.push_back(pos);
+                    ++pos;
+                    continue;
+                }
+                // iterate through consecutive stretch of None
+                unsigned start = pos;
+                while (counts[0][pos].label == "None" && pos < chrom_map[chrom+1])
+                    ++pos;
+                stretches.push_back(std::make_pair(start, pos-1));
+                std::cout << "    > Discovered 'None' stretch in bins [" << start << "," << pos -1 << "]" << std::endl;
+            }
+
+            // build chrom_map for good bins
+            good_map = std::vector<int32_t>(chrom_map.size() - 1, -1);
+            pos = 0;
+            for (int32_t chr = 0; chr < static_cast<int32_t>(good_map.size()); ++chr) {
+                while (pos < good_bins.size() && bins[good_bins[pos]].chr < chr)
+                    ++pos;
+                // now goodit is either at first occurence of chr, or at the end.
+                if (pos >= good_bins.size()) good_map[chr] = (int32_t)good_bins.size();
+                else good_map[chr] = pos;
+            }
+            // add last element for easy calculation of number of bins
+            good_map.push_back((int32_t)good_bins.size());
+        }
+    } else {
+        good_bins.resize(bins.size());
+        std::iota(good_bins.begin(), good_bins.end(), 0); // 0,1,2,...
+        good_map = chrom_map;
     }
 
-    // OUTPUT file
+
+
+
+
+
+
+    // prepare OUTPUT file
     std::ofstream out(conf.f_out.string());
-    out << "k\tsse\tbreakpoint\tchrom\tstart\tend" << std::endl;
+    out << "sample" << "\t" << "cells" << "\t" << "chrom" << "\t" << "bins";
+    out << "\t" << "maxcp" << "\t" << "none" << "\t" << "action" << "\t" << "k";
+    out << "\t" << "sse" << "\t" << "bps" << "\t" << "start" << "\t" << "end";
+    out << std::endl;
+
 
     // Segmentation chromosome per chromosome
     // This loop can later be parallelized
     for (int32_t chrom=0; chrom < chromosomes.size(); ++chrom)
     {
+
         unsigned N = chrom_map[chrom+1] - chrom_map[chrom];
         if (N < 1) continue;
 
@@ -487,22 +607,95 @@ int main_segment(int argc, char** argv) {
 
 
 
+        // Mode 2
+        // Remove 'none' bins from data before running segmentation.
+        // Later I will have to add these gaps again!
+        int num_none = 0;
+        if (vm.count("remove-none"))
+        {
+            std::cout << "    Removing None stretches" << std::endl;
+            num_none = (chrom_map[chrom+1] - chrom_map[chrom]) - (good_map[chrom+1] - good_map[chrom]);
+            if (num_none == 0) {
+                std::cout << "    No bad bins found." << std::endl;
+            } else {
+                // Recalculate N, max_cp, and max_k
+                N = data[0].size() - num_none;
+                max_k  = std::min(max_k, N);
+                max_cp = std::min(max_cp, N);
+                // Remove bins (columns) from data matrix
+                for (unsigned i = 0; i < data.size(); ++i) {
+                    for (unsigned gbin = good_map[chrom], lbin = 0; gbin < good_map[chrom+1]; ++gbin, ++lbin) {
+                        data[i][lbin] = data[i][good_bins[gbin]];
+                    }
+                    data[i].resize(N);
+                }
+                std::cout << "    Removed " << num_none << " bins" << std::endl;
+            }
+        }
+
+
         // New Cost matrix
         t1 = std::chrono::steady_clock::now();
         Matrix<double> new_cost;
         calculate_cost_matrix(data, max_k, new_cost);
+
+        // also, check that values make sense
+        for (unsigned k=0; k<max_k; ++k)
+            for (unsigned j=0; j<N-k; ++j)
+                assert(new_cost[k][j] >= 0);
+        for (unsigned k=0; k<max_k; ++k)
+            for (unsigned j=N-k; j<N; ++j)
+                assert(new_cost[k][j] <= 0);
+
+
+
+
+        // Mode 1 (none bins)
+        // Force segmentation to use "None" intervals.
+        // This is done by setting the cost for such intervals to 0 and adding
+        // a penalty to intervals violating the boarders.
+
+        if (vm.count("penalize-none"))
+        {
+            std::cout << "    Penalty for None = " << conf.none_penalty << std::endl;
+            for (auto stretch : stretches)
+            {
+                // Penalize all stretches that violate these boarders.
+                // Todo: note that this penalty becomes weaker the longer the stretches are!
+                for (unsigned k = 0; k < max_k; ++k)
+                    for (unsigned j = (k>stretch.first ? 0 : stretch.first - k); j < stretch.second && j < N-k; ++j)
+                        new_cost[k][j] += conf.none_penalty;
+
+                // Finally, favor the usage of exactly the consecutive None segment
+                new_cost[stretch.second - stretch.first  - 1][stretch.first ] = 0;
+            }
+        } // vm.count("penalize-none")
+
+
         t2 = std::chrono::steady_clock::now();
         std::cout << "    Cost matrix (" << max_k << " x " << N << ") took " << std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count() << " seconds." << std::endl;
 
 
+
+        // print cost matrix for first chromosome
+        // todo: remove later
+        if (vm.count("cost-mat") && chrom == 0) {
+            std::ofstream out(conf.f_cost_mat.string());
+            if (out.is_open()) {
+                std::cout << "[Write] cost matrix for 1. chromosome " << conf.f_cost_mat.string() << std::endl;
+                out << new_cost;
+            } else {
+                std::cerr << "[Warning] Cannot write to " << conf.f_cost_mat.string() << std::endl;
+            }
+        }
+
+
+
         // Find optimal segmentation
-        t1 = std::chrono::steady_clock::now();
         Matrix<int> breakpoints;
         std::vector<double> sse;
         if (!optimal_segment_dp(new_cost, max_cp, breakpoints, sse))
             std::cerr << "[ERROR] Segmentation failed" << std::endl;
-        t2 = std::chrono::steady_clock::now();
-        std::cout << "    Optimal segmentation (" << max_cp << " x " << N << ") took " << std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count() << " seconds." << std::endl;
 
 
 
@@ -511,12 +704,27 @@ int main_segment(int argc, char** argv) {
             std::cout << "    [Write] " << chromosomes[chrom] << " to file: " << conf.f_out.string() << std::endl;
             for (unsigned cp = 0; cp < max_cp; ++cp) {
                 for (unsigned k = 0; k <= cp; ++k) {
+                    out << *samples.begin() <<  "\t";
+                    out << counts.size() << "\t";
+                    out << chromosomes[chrom] << "\t";
+                    out << chrom_map[chrom+1] - chrom_map[chrom] << "\t";
+                    out << max_cp << "\t";
+                    out << num_none << "\t";
+                    if (vm.count("penalize-none"))
+                        out << "penalize-none" << "\t";
+                    else if (vm.count("remove-none"))
+                        out << "remove-none" << "\t";
+                    else
+                        out << "utilize-none" << "\t";
                     out << cp+1 << "\t";
                     out << sse[cp] << "\t";
-                    out << breakpoints[cp][k] << "\t";
-                    out << chromosomes[chrom] << "\t";
                     unsigned from = k==0 ? 0 : breakpoints[cp][k-1];
                     unsigned to   = breakpoints[cp][k]-1;
+                    if (vm.count("remove-none")) {
+                        from = good_bins[from];
+                        to   = good_bins[to];
+                    }
+                    out << to << "\t";
                     out << bins[from].start << "\t";
                     out << bins[to].end << std::endl;
                 }
@@ -525,7 +733,8 @@ int main_segment(int argc, char** argv) {
             std::cerr << "[Warning] Cannot write to " << conf.f_out.string() << std::endl;
         }
 
-    }
+    } // for chrom
+
     return 0;
 } // main
 
