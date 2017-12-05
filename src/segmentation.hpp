@@ -366,7 +366,7 @@ int main_segment(int argc, char** argv) {
     boost::program_options::options_description po_generic("Generic options");
     po_generic.add_options()
     ("help,?", "show help message")
-    ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("out.bed"), "output file for counts")
+    ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("segments.txt"), "output file for counts")
     ;
 
     boost::program_options::options_description po_segmentation("Segmentation options");
