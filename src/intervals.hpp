@@ -45,6 +45,7 @@ struct Interval {
     }
 };
 
+// this is probably a c++14 feature. I should change it to support older compilers
 auto less = [] (Interval const & a, Interval const & b) {
     if (a.chr == b.chr)
         // special condition: If intervals start at the same position, prefer larger one!
