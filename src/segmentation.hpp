@@ -505,7 +505,7 @@ int main_segment(int argc, char** argv) {
     // This is more flexible than using the count data, because it allows
     // the user to alter the labels of certain regions.
     //
-    std::vector<std::vector<std::pair<unsigned,unsigned>>> none_stretches (chromosomes.size());
+    std::vector<std::vector<std::pair<unsigned,unsigned>>> none_stretches(chromosomes.size());
     if (vm.count("remove-none") || vm.count("penalize-none"))
     {
         std::vector<unsigned> good_bins;
@@ -513,8 +513,8 @@ int main_segment(int argc, char** argv) {
 
         // Finding 'none' stretches
         unsigned num_none_bins = 0;
-        for (int32_t chrom = 0; chrom < chromosomes.size(); ++chrom)
-        {
+        for (int32_t chrom = 0; chrom < chromosomes.size(); ++chrom) {
+
             unsigned pos = chrom_map[chrom];
             while (pos < chrom_map[chrom+1]) {
                 if (counts[0][pos].label != "None") {
@@ -546,11 +546,12 @@ int main_segment(int argc, char** argv) {
         std::cout << "[Info] Found " << none_stretches.size() << " 'None' stretches";
         std::cout << ", in total " << num_none_bins << " bins." << std::endl;
 
+
         // Alternative 3.3
         // Remove 'none' bins from data before running segmentation.
         //
-        if (vm.count("remove-none"))
-        {
+        if (vm.count("remove-none")) {
+
             unsigned new_len = good_map[chromosomes.size()];
             // Remove bins (columns) from counts
             for (unsigned i = 0; i < counts.size(); ++i) {
@@ -641,8 +642,6 @@ int main_segment(int argc, char** argv) {
         // a penalty to intervals violating the boarders.
         if (vm.count("penalize-none"))
         {
-            std::cout << "    Penalty for None = " << conf.none_penalty << std::endl;
-            // todo: fix this (none_stretches)
             for (auto stretch : none_stretches[chrom])
             {
                 // Penalize all segments that violate these boarders.
@@ -652,7 +651,7 @@ int main_segment(int argc, char** argv) {
                         new_cost[k][j] += conf.none_penalty;
 
                 // Finally, favor the usage of exactly the consecutive None segment
-                new_cost[stretch.second - stretch.first  - 1][stretch.first ] = 0;
+                new_cost[stretch.second - stretch.first][stretch.first] = 0;
             }
         } // vm.count("penalize-none")
 
@@ -660,7 +659,7 @@ int main_segment(int argc, char** argv) {
 
         // print cost matrix for first chromosome
         // todo: remove later
-        if (vm.count("cost-mat") && chrom == 0) {
+        if (vm.count("cost-matrix") && chrom == 0) {
             std::ofstream out(conf.f_cost_mat.string());
             if (out.is_open()) {
                 std::cout << "[Write] cost matrix for 1. chromosome " << conf.f_cost_mat.string() << std::endl;
