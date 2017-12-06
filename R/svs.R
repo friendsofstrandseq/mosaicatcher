@@ -32,6 +32,11 @@ if (length(args) < 2 || length(args) > 3) {
     stop("Stopped execution on purpose.")
 }
 
+
+# Should 'None' regions be marked in the plot?
+mark_nones = TRUE
+
+
 #################
 # Check arguments
 zcat_command = "zcat"
@@ -65,6 +70,10 @@ counts[, sample_cell := paste(sample, "-", cell)]
 setkey(counts, sample_cell, chrom)
 
 
+######################
+# Prepare None regions
+counts[, cnsc := cumsum(c(0,abs(sign(diff(as.numeric(as.factor(class))))))), by = .(sample_cell, chrom)]
+none_regions = counts[class == 'None'][, .(start = min(start), end = max(end)), by = .(sample_cell, class, chrom)]
 
 #########################################
 # Switch to plot background colors or not
@@ -226,6 +235,7 @@ for (CHROM in unique(counts[, chrom])) {
 
         plt <- ggplot(local_counts)
 
+
         # Add GT colors:
         if(nrow(local_background_colors)>0) {
             plt <- plt +
@@ -233,6 +243,18 @@ for (CHROM in unique(counts[, chrom])) {
                           aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf, fill = SV_class)) +
                 scale_fill_manual(values = manual_colors)
         }
+
+
+        # Add an extralayer for 'None' regions
+        local_none_regions = none_regions[CELLS, on = .(sample_cell)]
+        if (mark_nones == TRUE && nrow(local_none_regions)>0) {
+            plt <- plt +
+                geom_rect(data = local_none_regions, fill = "black", alpha = 0.33,
+                          aes(xmin = start, xmax = end, ymin = -y_lim/2, ymax = y_lim/2)) +
+                geom_rect(data = local_none_regions, fill = "black", alpha = 0.666,
+                          aes(xmin = start, xmax = end, ymin = 0.99*y_lim, ymax = Inf))
+        }
+
 
         plt <- plt +
             geom_rect(aes(xmin = start, xmax=end, ymin=0, ymax = -w), fill='sandybrown') +
