@@ -81,7 +81,7 @@ namespace hmm {
         std::vector<TDistribution> inner;
 
         MultiVariate(std::vector<TDistribution> const & distributions) :
-            inner(distributions), dim(distributions.size())
+            dim(distributions.size()), inner(distributions)
         {
             assert(distributions.size() > 0 && distributions.size() < 256);
             for (auto dist : distributions)

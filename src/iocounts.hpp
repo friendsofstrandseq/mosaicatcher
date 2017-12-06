@@ -286,7 +286,6 @@ bool read_counts_gzip(TString const & f_in,
 
     // Validate entries, e.g. that all fields are filled
     for (unsigned i = 0; i<counts.size(); ++i) {
-        unsigned wc=0,none=0,total=0;
         for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
             if (counts[i][bin].watson_count >= MAX_UNSIGNED || \
                 counts[i][bin].crick_count  >= MAX_UNSIGNED || \
