@@ -45,8 +45,7 @@ struct Interval {
     }
 };
 
-// this is probably a c++14 feature. I should change it to support older compilers
-auto less = [] (Interval const & a, Interval const & b) {
+bool invt_less(Interval const & a, Interval const & b) {
     if (a.chr == b.chr)
         // special condition: If intervals start at the same position, prefer larger one!
         if (a.start == b.start)
@@ -134,7 +133,7 @@ bool read_dynamic_bins(std::vector<Interval> & intervals,
     }
 
     // sort intervals
-    std::sort(intervals.begin(), intervals.end(), less);
+    std::sort(intervals.begin(), intervals.end(), invt_less);
 
     // check that intervals don't overlap
     return make_chrom_map(intervals, chrom_map);
