@@ -250,7 +250,7 @@ int main_count(int argc, char **argv)
         std::vector<Interval> exclude;
         if (vm.count("exclude")) {
             read_exclude_file(conf.f_excl.string(), hdr, exclude, vm.count("verbose"));
-            sort(exclude.begin(), exclude.end(), interval::less);
+            sort(exclude.begin(), exclude.end(), interval::invt_less);
         }
         if (vm.count("verbose")) std::cout << "[Info] Creating " << round(conf.window/1000) << "kb bins with " << exclude.size() << " excluded regions" << std::endl;
         create_fixed_bins(bins,
