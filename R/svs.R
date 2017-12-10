@@ -123,6 +123,7 @@ if (!is.null(f_other)) {
 
             message("   -> detected SV probability file")
             prob = other
+
             prob[, sample_cell := paste(sample, "-", cell)]
 
             # Remove CN columns
@@ -134,17 +135,18 @@ if (!is.null(f_other)) {
             prob$p_ref = prob$p_ref * 1.1
 
             # Check that cells are the same as in "counts"
-            c1 = unique(counts[,.(sample,cell)])
-            c2 = unique(prob[,.(sample,cell)])
-            c3 = c1[c2,, on = .(sample,cell), nomatch=0]
+            c1 = unique(counts[,.(sample_cell)])
+            c2 = unique(prob[,.(sample_cell)])
+            c3 = c1[c2,, on = .(sample_cell), nomatch=0]
+
             if(nrow(c1) != nrow(c3)) {
                 message("WARNING: Not all the cells from the count table are also covered in the probabilities")
                 message("Cells in the count table:")
-                print(paste(c1$sample,c1$cell))
+                print(paste(c1$sample_cell))
                 message("Cells in the probability table:")
-                print(paste(c2$sample,c2$cell))
+                print(paste(c2$sample_cell))
                 message("Cells of the count table that are also covered by probs:")
-                print(paste(c3$sample,c3$cell))
+                print(paste(c3$sample_cell))
             }
 
             #######################
@@ -154,10 +156,12 @@ if (!is.null(f_other)) {
                               measure.vars = colnames(prob)[grepl('^p_',colnames(prob))],
                               variable.name = "SV_class",
                               value.name    = "probability")
+
             background_colors[, SV_class := substr(SV_class,3,nchar(as.character(SV_class)))]
 
+
             # Select
-            background_colors <- background_colors[, .SD[probability == max(probability),][order(probability),][1,], by = .(chrom,start,end,sample,cell)]
+            background_colors <- background_colors[, .SD[probability == max(probability),][order(probability),][1,], by = .(chrom,start,end,sample_cell)]
             setkey(background_colors, chrom, sample_cell)
 
 
