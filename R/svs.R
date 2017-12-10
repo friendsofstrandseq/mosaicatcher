@@ -80,8 +80,8 @@ manual_colors = c(ref = "#bbbbbb",
 
 
 if (!is.null(f_other)) {
-    
-    
+
+
     # Prepare 'other' table - either SV prob file or segmentation file
     f_seg_quantile = 0.5
     splitted = unlist(strsplit(f_other, '=', fixed = T))
@@ -94,8 +94,8 @@ if (!is.null(f_other)) {
             message("Ignoring everything after first '=' in ", f_other)
         }
     }
-    
-    
+
+
     # Read 'other' table - only then we can find out which type of data it is
     message(" * Reading addtional data ", f_other, "...")
     if (grepl('\\.gz$',f_other)) {
@@ -108,8 +108,8 @@ if (!is.null(f_other)) {
                 "start" %in% colnames(other),
                 "end"   %in% colnames(other))
 
-    
-    
+
+
     ##################
     # Switch data type
     #
@@ -138,14 +138,13 @@ if (!is.null(f_other)) {
             c2 = unique(prob[,.(sample,cell)])
             c3 = c1[c2,, on = .(sample,cell), nomatch=0]
             if(nrow(c1) != nrow(c3)) {
-                message("ERROR: Not all the cells from the count table are also covered in the probabilities")
+                message("WARNING: Not all the cells from the count table are also covered in the probabilities")
                 message("Cells in the count table:")
                 print(paste(c1$sample,c1$cell))
                 message("Cells in the probability table:")
                 print(paste(c2$sample,c2$cell))
                 message("Cells of the count table that are also covered by probs:")
                 print(paste(c3$sample,c3$cell))
-                stop()
             }
 
             #######################
@@ -202,12 +201,13 @@ n_cells = length(unique(counts[,sample_cell]))
 
 for (CHROM in unique(counts[, chrom])) {
 
-    message(" * Plotting ", CHROM)
+    out = paste0(f_out,".",CHROM,".pdf")
+    message(" * Plotting ", CHROM, " (", out, ")")
     if (nrow(background_colors)>0 && "seg1" %in% background_colors$SV_class)
         message("  -> Chose ", background_colors[chrom == CHROM, k][1], " segments (", f_seg_quantile, " quantile)")
 
 
-    cairo_pdf(paste0(f_out,".",CHROM,".pdf"), width=14, height=10, onefile = T)
+    cairo_pdf(out, width=14, height=10, onefile = T)
 
     i = 1
     while (i < n_cells) {
@@ -225,10 +225,10 @@ for (CHROM in unique(counts[, chrom])) {
         }
 
         plt <- ggplot(local_counts)
-        
+
         # Add GT colors:
         if(nrow(local_background_colors)>0) {
-            plt <- plt + 
+            plt <- plt +
                 geom_rect(data = local_background_colors, alpha = 0.5, size = 0.1,
                           aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf, fill = SV_class)) +
                 scale_fill_manual(values = manual_colors)
@@ -240,7 +240,7 @@ for (CHROM in unique(counts[, chrom])) {
             facet_wrap(~ sample_cell, ncol = 1) +
             ylab("Watson | Crick") + xlab(NULL) +
             scale_x_continuous(breaks = pretty_breaks(12), labels = format_Mb) +
-            scale_y_continuous(breaks = pretty_breaks(3)) + 
+            scale_y_continuous(breaks = pretty_breaks(3)) +
             coord_cartesian(ylim = c(-y_lim, y_lim)) +
             theme_minimal() +
             theme(panel.spacing = unit(0, "lines"),
