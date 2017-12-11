@@ -73,7 +73,7 @@ setkey(counts, sample_cell, chrom)
 ######################
 # Prepare None regions
 counts[, cnsc := cumsum(c(0,abs(sign(diff(as.numeric(as.factor(class))))))), by = .(sample_cell, chrom)]
-none_regions = counts[class == 'None'][, .(start = min(start), end = max(end)), by = .(sample_cell, class, chrom)]
+none_regions = counts[class == 'None'][, .(start = min(start), end = max(end)), by = .(sample_cell, class, chrom, cnsc)]
 
 #########################################
 # Switch to plot background colors or not
@@ -249,7 +249,7 @@ for (CHROM in unique(counts[, chrom])) {
 
 
         # Add an extralayer for 'None' regions
-        local_none_regions = none_regions[CELLS, on = .(sample_cell)]
+        local_none_regions = none_regions[CELLS, on = .(sample_cell)][chrom == CHROM]
         if (mark_nones == TRUE && nrow(local_none_regions)>0) {
             plt <- plt +
                 geom_rect(data = local_none_regions, fill = "black", alpha = 0.33,
