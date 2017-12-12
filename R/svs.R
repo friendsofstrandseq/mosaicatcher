@@ -23,6 +23,8 @@ print_usage = function() {
     message("segments, the median (50% quantile) number of segments per chromosome is shown  ")
     message("by default. This can be changed by specifiying seg-file=0.8 for 80% quantile for")
     message("example.                                                                        ")
+    message("   Note: For (2) better use the script R/plot_segments.R                        ")
+    message("")
 }
 
 

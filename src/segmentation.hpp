@@ -503,7 +503,7 @@ int main_segment(int argc, char** argv) {
 
 
     // 3. Determine `good_bins` from stretches of 'None' in the data.
-    // This is more flexible than using the count data, because it allows
+    // This is more flexible than using low-counts, because it allows
     // the user to alter the labels of certain regions.
     //
     std::vector<std::vector<std::pair<unsigned,unsigned>>> none_stretches(chromosomes.size());
@@ -578,10 +578,20 @@ int main_segment(int argc, char** argv) {
 
     // prepare OUTPUT file
     std::ofstream out(conf.f_out.string());
-    out << "sample" << "\t" << "cells" << "\t" << "chrom" << "\t" << "bins";
-    out << "\t" << "maxcp" << "\t" << "none" << "\t" << "action" << "\t" << "k";
-    out << "\t" << "sse" << "\t" << "bps" << "\t" << "start" << "\t" << "end";
-    out << std::endl;
+    out << "sample\t";
+    out << "cells\t";
+    out << "chrom\t";
+    out << "bins\t";
+    out << "maxcp\t";
+    out << "maxseg\t";
+    out << "none_bins\t";
+    out << "none_regions\t";
+    out << "action\t";
+    out << "k\t";
+    out << "sse\t";
+    out << "bps\t";
+    out << "start\t";
+    out << "end" << std::endl;
 
 
     // Segmentation chromosome per chromosome
@@ -701,7 +711,7 @@ int main_segment(int argc, char** argv) {
         unsigned num_none = 0;
         for (auto stretch : none_stretches[chrom])
             num_none += stretch.second - stretch.first + 1;
-
+        unsigned num_none_regions = none_stretches[chrom].size();
 
         // Output of breakpoints;
         if (out.is_open()) {
@@ -713,9 +723,11 @@ int main_segment(int argc, char** argv) {
                     out << chromosomes[chrom] << "\t";
                     out << chrom_map[chrom+1] - chrom_map[chrom] << "\t";
                     out << max_cp << "\t";
+                    out << max_k << "\t";
                     out << num_none << "\t";
+                    out << num_none_regions << "\t";
                     if (vm.count("penalize-none"))
-                        out << "penalize-none" << "\t";
+                        out << "penalize=" << conf.none_penalty << "\t";
                     else if (vm.count("remove-none"))
                         out << "remove-none" << "\t";
                     else
