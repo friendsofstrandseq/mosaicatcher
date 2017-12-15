@@ -108,17 +108,17 @@ bool optimal_segment_dp(Matrix<double> const & cost,
 {
     // Determine max_k and N from cost matrix
     unsigned max_k  = (unsigned)cost.size();
-    if (max_k < 5 || max_k > 5000) {
-        std::cerr << "[ERROR] unreasonable value for max_k: " << max_k << std::endl;
+    if (max_k < 2 || max_k > 5000) {
+        std::cerr << "[Error] unreasonable value for max_k: " << max_k << std::endl;
         return false;
     }
     unsigned N      = (unsigned)cost[0].size();
-    if (N < 5 || N > 25000) {
-        std::cerr << "[ERROR] unreasonable value for N: " << N << std::endl;
+    if (N < 2 || N > 25000) {
+        std::cerr << "[Error] unreasonable value for N: " << N << std::endl;
         return false;
     }
     if (max_cp > N || max_k > N) {
-        std::cerr << "[ERROR] max_cp or max_k cannot be larger than N: N=" << N << ", max_cp=" << max_cp << ", max_k=" << max_k << std::endl;
+        std::cerr << "[Error] max_cp or max_k cannot be larger than N: N=" << N << ", max_cp=" << max_cp << ", max_k=" << max_k << std::endl;
         return false;
     }
 
@@ -298,16 +298,16 @@ bool calculate_cost_matrix(Matrix<double> const & data,                         
 
     unsigned J  = (unsigned)data.size();        // number of cells or strands
     if (J < 1 || J > 2000) {
-        std::cerr << "[ERROR] more than 2000 strands might be too much: " << J << std::endl;
+        std::cerr << "[Warning] more than 2000 strands might be too much: " << J << std::endl;
         return false;
     }
     unsigned N      = (unsigned)data[0].size(); // length of signal
-    if (N < 5 || N > 25000) {
-        std::cerr << "[ERROR] unreasonable value for N: " << N << std::endl;
+    if (N < 2 || N > 25000) {
+        std::cerr << "[Error] unreasonable value for N: " << N << std::endl;
         return false;
     }
     if (max_k > N) {
-        std::cerr << "[ERROR] max_k cannot be larger than N: N=" << N << ", max_k=" << max_k << std::endl;
+        std::cerr << "[Error] max_k cannot be larger than N: N=" << N << ", max_k=" << max_k << std::endl;
         return false;
     }
 
@@ -474,7 +474,10 @@ int main_segment(int argc, char** argv) {
         unsigned prev = counts.size();
 
         for (unsigned i = 0; i < good_cells.size(); ++i) {
-            counts[i] = counts[good_cells[i]];
+            if (i != good_cells[i]) {
+                counts[i] = counts[good_cells[i]];
+                sample_cell_names[i] = sample_cell_names[good_cells[i]];
+            }
         }
         counts.resize(good_cells.size()); // should
         std::cout << "[Info] Removed " << prev - counts.size() << " bad cells, leaving " << counts.size() << " good ones" << std::endl;
@@ -650,7 +653,10 @@ int main_segment(int argc, char** argv) {
 
         // New Cost matrix
         Matrix<double> new_cost;
-        calculate_cost_matrix(data, max_k, new_cost);
+        if (!calculate_cost_matrix(data, max_k, new_cost)) {
+            std::cout << "[Error] Segmentation failed on " << chromosomes[chrom] << std::endl;
+            continue;
+        }
 
         // also, check that values make sense
         for (unsigned k=0; k<max_k; ++k)
@@ -700,8 +706,10 @@ int main_segment(int argc, char** argv) {
         // Find optimal segmentation
         Matrix<int> breakpoints;
         std::vector<double> sse;
-        if (!optimal_segment_dp(new_cost, max_cp, breakpoints, sse))
-            std::cerr << "[ERROR] Segmentation failed" << std::endl;
+        if (!optimal_segment_dp(new_cost, max_cp, breakpoints, sse)) {
+            std::cerr << "[Warning] Segmentation failed on " << chromosomes[chrom] << std::endl;
+            continue;
+        }
 
 
 
