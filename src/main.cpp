@@ -12,6 +12,7 @@
 #include "segmentation.hpp"
 #include "simulate.hpp"
 #include "calc_bins.hpp"
+#include "sces.hpp"
 
 int main(int argc, char **argv)
 {
@@ -27,6 +28,9 @@ int main(int argc, char **argv)
 
     } else if (argc >= 2 && std::string(argv[1]) == "makebins") {
         return main_calc_bins(argc-1, argv+1);
+
+    } else if (argc >= 2 && std::string(argv[1]) == "sces") {
+        return main_sces(argc-1, argv+1);
 
     } else if (argc >= 2 && std::string(argv[1]) == "--version") {
         std::cout << "Mosaicatcher " << STRINGIFYMACRO(MOSAIC_VERSION_MAJOR) ;
