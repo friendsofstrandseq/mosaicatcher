@@ -29,7 +29,7 @@ if (length(args) != 4) {
     f_segments = args[2]
          CHROM = args[3]
          f_out = args[4]
-  zcat_command = "/usr/local/bin/zcat"
+  zcat_command = "zcat"
      format_Mb = function(x) {paste(comma(round(x/1e6,1)), "Mb")}
 cells_per_page = 10
 invisible(assert_that(grepl('\\.pdf$', f_out)))
