@@ -52,6 +52,38 @@ struct Conf_sces {
 };
 
 
+// STL-style function to merge consecutive elemens
+template <class InputIter, class ForwardIter, class BinaryPredicate, class BinaryFunction>
+ForwardIter _group_copy(InputIter first, InputIter last,
+                         ForwardIter result,
+                         BinaryPredicate _bool_mergeable,
+                         BinaryFunction _merge_func)
+{
+    if (first == last) return result; // skip empty container
+
+    auto elem = *first; // copy first element anyways.
+    while (++first != last) { // loop skippes first elem
+        if ( !_bool_mergeable(elem, *first) ) {
+            *(result++) = elem;
+            elem = *first;
+        } else {
+            elem = _merge_func(elem, *first);
+        }
+    }
+    *(result++) = elem;
+    return result;
+}
+
+struct Interval2 {
+    std::string label;
+    unsigned start, end;
+    unsigned watson_count, crick_count;
+    Interval2() : label(), start(0), end(0), watson_count(0), crick_count(0) {};
+    Interval2(std::string const & label, unsigned start, unsigned end, unsigned w, unsigned c) :
+        label(label), start(start), end(end), watson_count(w), crick_count(c)
+    {}
+};
+
 
 int main_sces(int argc, char **argv)
 {
@@ -158,13 +190,12 @@ int main_sces(int argc, char **argv)
         return 2;
     }
 
-
-    // cc = consecutive counts
-    std::vector<std::vector<std::pair<Interval, std::string>>> cc(counts.size());
+    // Per sample, per chrom
     for (unsigned i = 0; i < counts.size(); ++i) {
         for (int32_t chrom = 0; chrom < chromosomes.size(); ++chrom) {
 
-            std::vector<std::pair<Interval, std::string>> & cci = cc[i];
+
+            std::vector<Interval2> cci;
 
             // Skip empty chromosomes
             if (chrom_map[chrom+1] - chrom_map[chrom] < 1) {
@@ -172,30 +203,42 @@ int main_sces(int argc, char **argv)
                 continue;
             }
 
-            // Find consecutive intervals!
+            // Step 1:
+            // Find consecutive intervals
             int32_t bin = chrom_map[chrom];
-            cci.push_back(std::make_pair(bins[bin], counts[i][bin].label));
-            for (int32_t bin = chrom_map[chrom]+1; bin < chrom_map[chrom+1]; ++bin) {
-                if (counts[i][bin].label == cc[i].back().second) {
-                    cci.back().first.end = bins[bin].end;
+            cci.push_back(Interval2(counts[i][bin].label,
+                                   bins[bin].start,
+                                   bins[bin].end,
+                                   counts[i][bin].watson_count,
+                                   counts[i][bin].crick_count));
+            for (int32_t bin = chrom_map[chrom]+1;
+                 bin < chrom_map[chrom+1]; ++bin)
+            {
+                if (counts[i][bin].label == cci.back().label) {
+                    cci.back().end = bins[bin].end;
+                    cci.back().watson_count += counts[i][bin].watson_count;
+                    cci.back().crick_count += counts[i][bin].crick_count;
                 } else {
-
-                    cci.push_back(std::make_pair(bins[bin], counts[i][bin].label));
+                    cci.push_back(Interval2(counts[i][bin].label,
+                                           bins[bin].start,
+                                           bins[bin].end,
+                                           counts[i][bin].watson_count,
+                                           counts[i][bin].crick_count));
                 }
             }
 
-
+            // Step 2:
             // Get the majoriy type
             std::string majt;
             {
                 unsigned ww=0, wc=0, cc=0, none=0;
                 for (auto const & x : cci) {
-                    if (x.second == "WW")      { ww += x.first.end - x.first.start;}
-                    else if (x.second == "CC") { cc += x.first.end - x.first.start;}
-                    else if (x.second == "WC") { wc += x.first.end - x.first.start;}
-                    else if (x.second == "None") {none += x.first.end - x.first.start;}
+                    if (x.label == "WW")      { ww += x.end - x.start;}
+                    else if (x.label == "CC") { cc += x.end - x.start;}
+                    else if (x.label == "WC") { wc += x.end - x.start;}
+                    else if (x.label == "None") {none += x.end - x.start;}
                     else {
-                        std::cerr << "[Warning] Unknown state " << x.second << "! Allowed states are only WW,WC,CC, and None" << std::endl;
+                        std::cerr << "[Warning] Unknown state " << x.label << "! Allowed states are only WW, WC, CC, and None" << std::endl;
                     }
                 }
                 unsigned max = std::max({ww,wc,cc});
@@ -206,36 +249,57 @@ int main_sces(int argc, char **argv)
 
             if (cci.size()==1) continue;
 
-            // Part 1
-            // Remove None and small segments.
-            // At first, make sure to extend to the ends of the chromosomes.
-            if (cci.size()>1 && cci[0].second == "None") {
-                cci[1].first.start = cci[0].first.start;
-                cci.erase(cci.begin());
-            }
-            unsigned N = cci.size() -1;
-            if (cci.size()>1 && cci[N].second == "None") {
-                cci[N-1].first.end = cci[N].first.end;
-                cci.pop_back();
+            // print
+            std::cout << "Segmentation: " << sample_cell_names[i].second << ", " << chromosomes[chrom] << "\t" << majt << std::endl;
+
+
+            // Part 3:
+            // Mke sure to extend to the ends of the chromosomes by replacing
+            // 'None' segments with the neighboring label. This is to make sure
+            // that segments cover the whole chromosome (except if the SCE
+            // occurs within an internal None segment, then there will be an
+            // internal gap.
+            {
+                if (cci.size()>1 && cci[0].label == "None") {
+                    cci[1].start = cci[0].start;
+                    cci.erase(cci.begin());
+                }
+                unsigned N = cci.size() -1;
+                if (N>0 && cci[N].label == "None") {
+                    cci[N-1].end = cci[N].end;
+                    cci.pop_back();
+                }
             }
 
-            // Then copy by dropping small and none segments
-            std::vector<std::pair<Interval, std::string>> new_cci;
+
+            // Step 4:
+            // Drop none segments
+            std::vector<Interval2> new_cci;
             std::copy_if(cci.begin(), cci.end(),
                          std::back_inserter(new_cci),
-                         [&majt, &conf](std::pair<Interval,std::string> const & x) {return x.second=="None" || (x.second != majt && x.first.end-x.first.start < conf.small_intv_size); });
+                         [](Interval2 const & x) { return x.label != "None"; });
 
 
-            std::cout << sample_cell_names[i].second << ", " << chromosomes[chrom] << std::endl;
-            for (unsigned j = 0; j < new_cci.size(); ++j) {
-                Interval intv = new_cci[j].first; // copy
-                std::string label = new_cci[j].second; // copy
-                std::cout << "\t" << intv.start/(float)1e3 << "-" << intv.end/(float)1e3 << "\t" << label << std::endl;
-            }
 
-            // * wenn label == None
-            //    * wenn rechts und links gleich, oder rechts oder links nichts mehr, dann füge die Segmente zusammen
-            //    * wenn rechts und links unterschiedlich
+
+            // print
+            for (auto const & x : new_cci) std::cout << "\t" << x.start/(float)1e6 << "Mb - " << x.end/(float)1e6 << "Mb\t" << x.label << " (" << x.watson_count << "/" << x.crick_count << ")" << std::endl;
+
+
+            // Step 5:
+            // Merge neighboring segments if they have the same state.
+            auto iter = _group_copy(new_cci.begin(), new_cci.end(),
+                                    new_cci.begin(),
+                                    [](Interval2 const & a, Interval2 const & b) -> bool {return a.label == b.label;},
+                                    [](Interval2 const & a, Interval2 const & b) {Interval2 ret(a); ret.end = b.end; return ret;}
+                                    );
+            new_cci.erase(iter, new_cci.end());
+
+
+
+            // print
+            std::cout << "    ---" << std::endl;
+            for (auto const & x : new_cci) std::cout << "\t" << x.start/(float)1e6 << "Mb - " << x.end/(float)1e6 << "Mb\t" << x.label << " (" << x.watson_count << "/" << x.crick_count << ")" << std::endl;
 
 
         } // chrom
