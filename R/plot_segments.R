@@ -3,11 +3,11 @@
 # Distributed under the MIT software license, see the accompanying
 # file LICENSE.md or http://www.opensource.org/licenses/mit-license.php.
 
-library(data.table)
-library(scales)
-library(ggplot2)
-library(assertthat)
-library(cowplot)
+suppressMessages(library(data.table))
+suppressMessages(library(scales))
+suppressMessages(library(ggplot2))
+suppressMessages(library(assertthat))
+suppressMessages(library(cowplot))
 
 print_usage <- function() {
     message("                                                                                ")
@@ -31,7 +31,7 @@ if (length(args) != 4) {
          f_out = args[4]
   zcat_command = "/usr/local/bin/zcat"
      format_Mb = function(x) {paste(comma(round(x/1e6,1)), "Mb")}
-cells_per_page = 8
+cells_per_page = 10
 invisible(assert_that(grepl('\\.pdf$', f_out)))
 
 
@@ -65,7 +65,7 @@ chrom_size = max(chrom_size$end) - min(chrom_size$start)
 
 #########################
 # Select randomly 8 cells
-message(" * Randomly picking some cells. If you're unhappy with this selection, just run the script again!")
+message(" * Randomly picking ", cells_per_page, " cells. If you're unhappy with this selection, just run the script again!")
 good_cells <- good_cells[sample(1:nrow(good_cells),8)]
 counts <- counts[good_cells, on = .(sample,cell), nomatch = 0]
 y_lim = 3*counts[, median(w+c)]
@@ -94,7 +94,7 @@ segs[, SV_class := rep(paste0("seg",1:3), ceiling(.N/3))[1:.N], by = .(k)]
 
 bg_cols = NULL
 for (i in 1:nrow(good_cells)) {
-    bg_cols <- rbind(bg_cols, cbind(segs, sample = good_cells$sample[i], cell = good_cells$cell[i]))    
+    bg_cols <- rbind(bg_cols, cbind(segs, sample = good_cells$sample[i], cell = good_cells$cell[i]))
 }
 
 
@@ -108,40 +108,45 @@ cairo_pdf(f_out, width=14, height=10, onefile = T)
 ################################
 # Overview page at the beginning
 if (TRUE) {
-    
+
     message(" * Plotting overview page...")
-    plt_sse <- ggplot(unique(segs[, .(k,sse)])) + 
-        aes(k,sse) + 
+    plt_sse <- ggplot(unique(segs[, .(k,sse)])) +
+        aes(k,sse) +
         geom_line() +
         geom_point(shape = 4) +
         scale_y_log10(labels = comma) +
         theme_gray() +
         ylab("Standard squared error") +
         xlab("Number of segments") +
-        geom_vline(xintercept = segs$none_regions[1], linetype = "dashed", color = "dodgerblue")
-    
+        geom_vline(xintercept = segs$none_regions[1], linetype = "dashed", color = "dodgerblue") +
+        geom_vline(xintercept = 2*segs$none_regions[1], linetype = "dashed", color = "darkorange") +
+        annotate("text", x = segs$none_regions[1]-1, y = Inf, label = "none", vjust = 1, hjust = 1) +
+        annotate("text", x = 1+2* segs$none_regions[1], y = Inf, label = "2 x none", vjust = 1, hjust = 0)
+        #geom_text(data = NULL, label = "none", x = segs$none_regions[1], y = Inf, hjust = 0, vjust = 1, inherit.aes = F) +
+        #geom_text(data = NULL, label = "2 x none", x = 2*segs$none_regions[1], y = Inf, hjust = 0, vjust = 1, inherit.aes = F)
+
     plt_title <- ggdraw() + draw_label(paste("Segmentation on chromosome", CHROM, "across", n_cells, "cells from", n_samples, "sample(s)"), fontface='bold')
     plt_content <- ggdraw() +
         draw_plot(plt_sse, x=.4, y=.1,  width=.55, height=.8) +
-        draw_label("Segmentation summary", 
+        draw_label("Segmentation summary",
                    x=.05, y=.9, vjust=1, hjust=0, size=14, fontface = "bold") +
-        draw_label(paste("Chromosome:",CHROM), 
+        draw_label(paste("Chromosome:",CHROM),
                    x=.05, y=.85, vjust=1, hjust=0, size=12) +
-        draw_label(paste0("Chrom size: ", format_Mb(chrom_size), ", ", segs$bins[1], " bins"), 
+        draw_label(paste0("Chrom size: ", format_Mb(chrom_size), ", ", segs$bins[1], " bins"),
                    x=.05, y=.82, vjust=1, hjust=0, size=12) +
-        draw_label(paste0("Number of cells: ", n_cells, "/", n_cells_orig), 
+        draw_label(paste0("Number of cells: ", n_cells, "/", n_cells_orig),
                    x=.05, y=.79, vjust=1, hjust=0, size=12) +
-        
-        draw_label(paste0("None regions: ", segs$none_regions[1], " regions, ", segs$none_bins[1], " bins"), 
+
+        draw_label(paste0("None regions: ", segs$none_regions[1], " regions, ", segs$none_bins[1], " bins"),
                    x=.05, y=.74, vjust=1, hjust=0, size=12) +
-        draw_label(paste0("How to treat None regions: ", segs$action[1]), 
+        draw_label(paste0("How to treat None regions: ", segs$action[1]),
                    x=.05, y=.71, vjust=1, hjust=0, size=12) +
-        
-        draw_label(paste0("Max. number of segments: ", segs$maxcp[1]), 
+
+        draw_label(paste0("Max. number of segments: ", segs$maxcp[1]),
                    x=.05, y=.66, vjust=1, hjust=0, size=12) +
-        draw_label(paste0("Largest segment: ", segs$maxseg[1], " bins"), 
+        draw_label(paste0("Largest segment: ", segs$maxseg[1], " bins"),
                    x=.05, y=.63, vjust=1, hjust=0, size=12)
-    
+
     plt_all <- plot_grid(plt_title, plt_content, ncol=1, rel_heights=c(0.07, 1))
     print(plt_all)
 }
@@ -149,8 +154,14 @@ if (TRUE) {
 
 ##############################
 # Plot a seletion of #segments
-for (num_seg in unique(quantile(1:max(segs$k), c(0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 1), type = 3))) {
-    
+quantiles = c(0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)
+if (grepl('penalize', segs$action[1])) {
+  ranges = max(c(max(segs$k),segs$none_regions[1])) : max(segs$k)
+} else {
+  ranges = 1:max(segs$k)
+}
+for (num_seg in unique(quantile(ranges, quantiles, type = 3))) {
+
     message(" * Plotting segmation with ", num_seg, " segments...")
     local_bg_cols <- bg_cols[k == num_seg]
     plt <- ggplot(counts) +
@@ -175,7 +186,7 @@ for (num_seg in unique(quantile(1:max(segs$k), c(0, 0.05, 0.1, 0.15, 0.2, 0.3, 0
               strip.text = element_text(size = 5),
               legend.position = "bottom") +
         ggtitle(paste0(num_seg, " segments on ", CHROM,  " (", basename(f_counts), ")"))
-    
+
     print(plt)
 }
 
