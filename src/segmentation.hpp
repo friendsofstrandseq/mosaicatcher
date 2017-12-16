@@ -601,6 +601,7 @@ int main_segment(int argc, char** argv) {
     // This loop can later be parallelized
     for (int32_t chrom=0; chrom < chromosomes.size(); ++chrom)
     {
+        std::chrono::steady_clock::time_point t3 = std::chrono::steady_clock::now();
         // parameters:
         // max_k = longest allowed segment
         // max_cp = max. number of change points, at least 10
@@ -722,8 +723,11 @@ int main_segment(int argc, char** argv) {
         unsigned num_none_regions = none_stretches[chrom].size();
 
         // Output of breakpoints;
+
         if (out.is_open()) {
-            std::cout << "[Write] chromosome '" << chromosomes[chrom] << "' to file " << conf.f_out.string() << std::endl;
+            std::chrono::steady_clock::time_point t4 = std::chrono::steady_clock::now();
+            auto time2 = std::chrono::duration_cast<std::chrono::duration<double>>(t4 - t3).count();
+            std::cout << "[Write] chromosome '" << chromosomes[chrom] << "' (took " << time2 << " sec) to file " << conf.f_out.string() << std::endl;
             for (unsigned cp = 0; cp < max_cp; ++cp) {
                 for (unsigned k = 0; k <= cp; ++k) {
                     out << *samples.begin() <<  "\t";
