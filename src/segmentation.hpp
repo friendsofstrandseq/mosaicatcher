@@ -510,7 +510,6 @@ int main_segment(int argc, char** argv) {
     // the user to alter the labels of certain regions.
     //
     std::vector<std::vector<std::pair<unsigned,unsigned>>> none_stretches(chromosomes.size());
-    if (vm.count("remove-none") || vm.count("penalize-none"))
     {
         std::vector<unsigned> good_bins;
         std::vector<int32_t> good_map;
