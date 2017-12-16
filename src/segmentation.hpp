@@ -749,8 +749,8 @@ int main_segment(int argc, char** argv) {
                     unsigned from = k==0 ? 0 : breakpoints[cp][k-1];
                     unsigned to   = breakpoints[cp][k]-1;
                     out << to << "\t";
-                    out << bins[from].start << "\t";
-                    out << bins[to].end << std::endl;
+                    out << bins[chrom_map[chrom] + from].start << "\t";
+                    out << bins[chrom_map[chrom] + to].end << std::endl;
                 }
             }
         } else {
