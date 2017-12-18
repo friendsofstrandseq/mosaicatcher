@@ -65,7 +65,7 @@ chrom_size = max(chrom_size$end) - min(chrom_size$start)
 
 #########################
 # Select randomly cells_per_page cells
-if (length(good_cells)>cells_per_page) {
+if (nrow(good_cells)>cells_per_page) {
     message(" * Randomly picking ", cells_per_page, " cells. If you're unhappy with this selection, just run the script again!")
     good_cells <- good_cells[sample(1:nrow(good_cells),cells_per_page)]
 }
