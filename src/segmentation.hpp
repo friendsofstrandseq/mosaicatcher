@@ -680,7 +680,7 @@ int main_segment(int argc, char** argv) {
                 // Note that this penalty becomes weaker the longer the segment!
                 for (unsigned k = 0; k < max_k; ++k)
                     for (unsigned j = (k>stretch.first ? 0 : stretch.first - k); j < stretch.second && j < N-k; ++j)
-                        new_cost[k][j] = conf.none_penalty;
+                        new_cost[k][j] += conf.none_penalty;
 
                 // Finally, favor the usage of exactly the consecutive None segment
                 new_cost[stretch.second - stretch.first][stretch.first] = 0;
