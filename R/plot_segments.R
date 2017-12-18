@@ -65,9 +65,11 @@ chrom_size = max(chrom_size$end) - min(chrom_size$start)
 
 #########################
 # Select randomly 8 cells
-message(" * Randomly picking ", cells_per_page, " cells. If you're unhappy with this selection, just run the script again!")
-good_cells <- good_cells[sample(1:nrow(good_cells),8)]
-counts <- counts[good_cells, on = .(sample,cell), nomatch = 0]
+if (length(good_cells)>8) {
+    message(" * Randomly picking ", cells_per_page, " cells. If you're unhappy with this selection, just run the script again!")
+    good_cells <- good_cells[sample(1:nrow(good_cells),8)]
+    counts <- counts[good_cells, on = .(sample,cell), nomatch = 0]
+}
 y_lim = 3*counts[, median(w+c)]
 
 
