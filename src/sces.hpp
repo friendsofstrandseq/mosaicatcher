@@ -25,6 +25,7 @@
 #include <boost/iostreams/filter/gzip.hpp>
 #include <htslib/sam.h>
 
+#include "utils.hpp"
 #include "version.hpp"
 #include "intervals.hpp"
 #include "counter.hpp"
@@ -52,27 +53,6 @@ struct Conf_sces {
 };
 
 
-// STL-style function to merge consecutive elemens
-template <class InputIter, class ForwardIter, class BinaryPredicate, class BinaryFunction>
-ForwardIter _group_copy(InputIter first, InputIter last,
-                         ForwardIter result,
-                         BinaryPredicate _bool_mergeable,
-                         BinaryFunction _merge_func)
-{
-    if (first == last) return result; // skip empty container
-
-    auto elem = *first; // copy first element anyways.
-    while (++first != last) { // loop skippes first elem
-        if ( !_bool_mergeable(elem, *first) ) {
-            *(result++) = elem;
-            elem = *first;
-        } else {
-            elem = _merge_func(elem, *first);
-        }
-    }
-    *(result++) = elem;
-    return result;
-}
 
 struct Interval2 {
     std::string label;
@@ -288,7 +268,7 @@ int main_sces(int argc, char **argv)
 
             // Step 5:
             // Merge neighboring segments if they have the same state.
-            auto iter = _group_copy(new_cci.begin(), new_cci.end(),
+            auto iter = reduce_adjacent(new_cci.begin(), new_cci.end(),
                                     new_cci.begin(),
                                     [](Interval2 const & a, Interval2 const & b) -> bool {return a.label == b.label;},
                                     [](Interval2 const & a, Interval2 const & b) {Interval2 ret(a); ret.end = b.end; return ret;}
