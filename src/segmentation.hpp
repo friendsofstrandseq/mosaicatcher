@@ -343,6 +343,7 @@ struct Conf_segment {
     float merge_threshold;
     unsigned max_segment_length;
     bool remove_bad_cells;
+    std::string cm_chrom;
 };
 
 
@@ -383,6 +384,7 @@ int main_segment(int argc, char** argv) {
     po_hidden.add_options()
     ("input-file", boost::program_options::value<boost::filesystem::path>(&conf.f_in), "mosaicatcher count file")
     ("cost-matrix,c", boost::program_options::value<boost::filesystem::path>(&conf.f_cost_mat), "write cost matrix to file")
+    ("cost-matrix-chrom,C", boost::program_options::value<std::string>(&conf.cm_chrom), "Chromosome for which cost matrix should be written (by default first chrom)")
     ;
 
     boost::program_options::positional_options_description pos_args;
@@ -448,6 +450,12 @@ int main_segment(int argc, char** argv) {
     auto time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
     std::cout << "[Info] " << counts.size() << " cells found." << std::endl;
     std::cout << "[Time] Reading took " << time.count() << " seconds." << std::endl;
+
+
+    // Catch case of empty table
+    if (chromosomes.empty())
+        return 0;
+    if (conf.cm_chrom.empty()) conf.cm_chrom = chromosomes[0];
 
 
     // If more than one sample - give a warning
@@ -689,12 +697,12 @@ int main_segment(int argc, char** argv) {
 
 
 
-        // print cost matrix for first chromosome
+        // print cost matrix for a chromosome
         // todo: remove later
-        if (vm.count("cost-matrix") && chrom == 2) {
+        if (vm.count("cost-matrix") && chromosomes[chrom] == conf.cm_chrom) {
             std::ofstream out(conf.f_cost_mat.string());
             if (out.is_open()) {
-                std::cout << "[Write] cost matrix for 1. chromosome " << conf.f_cost_mat.string() << std::endl;
+                std::cout << "[Write] cost matrix for chromosome '" << conf.cm_chrom << "' to " << conf.f_cost_mat.string() << std::endl;
                 out << new_cost;
             } else {
                 std::cerr << "[Warning] Cannot write to " << conf.f_cost_mat.string() << std::endl;
