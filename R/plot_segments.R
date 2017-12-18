@@ -114,7 +114,7 @@ if (TRUE) {
         aes(k,sse) +
         geom_line() +
         geom_point(shape = 4) +
-        scale_y_log10(labels = comma) +
+        scale_y_log10(labels = comma, breaks = pretty_breaks(10)) +
         theme_gray() +
         ylab("Standard squared error") +
         xlab("Number of segments") +
@@ -156,7 +156,7 @@ if (TRUE) {
 # Plot a seletion of #segments
 quantiles = c(0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)
 if (grepl('penalize', segs$action[1])) {
-  ranges = max(c(max(segs$k),segs$none_regions[1])) : max(segs$k)
+  ranges = min(c(max(segs$k)-1,segs$none_regions[1])) : max(segs$k)
 } else {
   ranges = 1:max(segs$k)
 }
