@@ -49,7 +49,7 @@ using count::Counter;
 struct Conf_sces {
     boost::filesystem::path f_in;
     boost::filesystem::path f_out;
-    int32_t small_intv_size;
+    int32_t small_intv_size, low_support;
 };
 
 
@@ -74,7 +74,8 @@ int main_sces(int argc, char **argv)
     po_generic.add_options()
     ("help,?", "show help message")
     ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("segments.txt"), "output file for counts")
-    ("ignore-interval-size,s", boost::program_options::value<int32_t>(&conf.small_intv_size)->default_value(3000000), "Ignore segments of this size or smaller")
+    ("ignore-small-regions,u", boost::program_options::value<int32_t>(&conf.small_intv_size)->implicit_value(3000000), "Ignore segments of this size or smaller")
+    ("ignore-low-support-regions,v", boost::program_options::value<int32_t>(&conf.low_support)->implicit_value(100), "Ignore segments with less reads than this")
     ;
 
     boost::program_options::options_description po_hidden("Hidden options");
@@ -104,8 +105,36 @@ int main_sces(int argc, char **argv)
         std::cout << "." << STRINGIFYMACRO(MOSAIC_VERSION_MINOR) << std::endl;
         std::cout << "> Call Sister chromatid exchange events (SCEs)." << std::endl;
         std::cout << std::endl;
-        std::cout << "Usage:   " << argv[0] << " [OPTIONS] counts.txt.gz" << std::endl << std::endl;
+        std::cout << "Usage:   " << argv[0] << " [-u] [-v] [OPTIONS] counts.txt.gz" << std::endl << std::endl;
         std::cout << visible_options << std::endl;
+        if (!vm.count("help")) {
+            std::cout << "Specify --help for more details." << std::endl;
+        } else {
+            std::cout <<
+            "Sister Chromatid Exchange events (SCEs) are visible in Strand-seq\n"
+            "data as a change in the inherited strand states (e.g. from WW to WC)\n"
+            "which occurs at a random position in the chromosome. Here I implemented\n"
+            "a very heuristic approach to SCE detecion (described below). It is\n"
+            "recommended to provide a count table in a low resolution (e.g. 500kb)\n"
+            "to reduce the number of state flips.\n"
+            "\n"
+            "Algorithm:\n"
+            " 1. Combine consecutive intervals of the same state (taken from the\n"
+            "    class column in the count table) into larger intervals.\n"
+            " 2. Drop 'None' regions, which had been marked as bad regions across\n"
+            "    all cells. Special care is taken at the ends of the chromosomes:\n"
+            "    if a chromosome ends in a 'None' region, the adjacent region is\n"
+            "    extended to the end.\n"
+            " 3. Remove small (-u, recommended) or low-supported (-v) regions which\n"
+            "    are not concordant with the majority type of the chromosome. This\n"
+            "    should again reduce the number of state flips.\n"
+            "    NOTE: Only a single type per chromosome is considered - there are\n"
+            "          chromosomes with more than one SCE, which this algorithm will\n"
+            "          miss."
+            " 4. ...\n"
+            "" << std::endl;
+            std::cout << "" << std::endl;
+        }
         return vm.count("help") ? 0 : 1;
     }
 
@@ -170,6 +199,11 @@ int main_sces(int argc, char **argv)
         return 2;
     }
 
+
+    // strand_states[cell][chrom][interval]
+    std::vector<std::vector<std::vector<Interval2>>> strand_states(counts.size(),
+                                                                   std::vector<std::vector<Interval2>>(chromosomes.size()));
+
     // Per sample, per chrom
     for (unsigned i = 0; i < counts.size(); ++i) {
         for (int32_t chrom = 0; chrom < chromosomes.size(); ++chrom) {
@@ -229,9 +263,6 @@ int main_sces(int argc, char **argv)
 
             if (cci.size()==1) continue;
 
-            // print
-            std::cout << "Segmentation: " << sample_cell_names[i].second << ", " << chromosomes[chrom] << "\t" << majt << std::endl;
-
 
             // Part 3:
             // Mke sure to extend to the ends of the chromosomes by replacing
@@ -254,38 +285,108 @@ int main_sces(int argc, char **argv)
 
             // Step 4:
             // Drop none segments
-            std::vector<Interval2> new_cci;
-            std::copy_if(cci.begin(), cci.end(),
-                         std::back_inserter(new_cci),
+            //std::vector<Interval2> new_cci;
+            auto iter = std::copy_if(cci.begin(), cci.end(),
+                         cci.begin(),
                          [](Interval2 const & x) { return x.label != "None"; });
+            cci.erase(iter, cci.end());
 
-
-
-
-            // print
-            for (auto const & x : new_cci) std::cout << "\t" << x.start/(float)1e6 << "Mb - " << x.end/(float)1e6 << "Mb\t" << x.label << " (" << x.watson_count << "/" << x.crick_count << ")" << std::endl;
 
 
             // Step 5:
             // Merge neighboring segments if they have the same state.
-            auto iter = reduce_adjacent(new_cci.begin(), new_cci.end(),
-                                    new_cci.begin(),
-                                    [](Interval2 const & a, Interval2 const & b) -> bool {return a.label == b.label;},
-                                    [](Interval2 const & a, Interval2 const & b) {Interval2 ret(a); ret.end = b.end; return ret;}
-                                    );
-            new_cci.erase(iter, new_cci.end());
+            iter = reduce_adjacent(cci.begin(),
+                                   cci.end(),
+                                   cci.begin(),
+                                   [](Interval2 const & a, Interval2 const & b) -> bool {return a.label == b.label;},
+                                   [](Interval2 const & a, Interval2 const & b) {Interval2 ret(a); ret.end = b.end; return ret;}
+                                   );
+            cci.erase(iter, cci.end());
 
 
 
-            // print
-            std::cout << "    ---" << std::endl;
-            for (auto const & x : new_cci) std::cout << "\t" << x.start/(float)1e6 << "Mb - " << x.end/(float)1e6 << "Mb\t" << x.label << " (" << x.watson_count << "/" << x.crick_count << ")" << std::endl;
+            // Step 6:
+            // Remove small non-majt regions, if they are small enough or not
+            // supported by enough reads. Note that if multiple small non-majt
+            // are next to another, those are merged and then evaluated.
+            if (vm.count("ignore-small-regions") ||
+                vm.count("ignore-low-support-regions"))
+            {
+                for (unsigned j = 0; j < cci.size(); ++j) {
 
+                    Interval2 merged(cci[j]);
+                    if (merged.label != majt) {
+
+                        // if there are multiple non-majt elements; combine them
+                        unsigned jj = j;
+                        while(jj < cci.size() && cci[jj].label != majt) {
+                            merged.end = cci[jj].end;
+                            merged.label = "mixed";
+                            merged.watson_count += cci[jj].watson_count;
+                            merged.crick_count += cci[jj].crick_count;
+                            ++jj;
+                        }
+
+                        if (vm.count("ignore-small-regions") &&
+                            merged.end - merged.start <= conf.small_intv_size)
+                        {
+                            std::cout << " -> Remove [" << sample_cell_names[i].second << "  " << chromosomes[chrom] << ":" << merged.start/1.0e6 << "-" << merged.end/1.0e6 << " " << merged.label << "] because it's too small (" << (merged.end - merged.start)/1.0e6 << " Mb)" << std::endl;
+                            for (unsigned k = j; k < jj; ++k)
+                                cci[k].label = "remove";
+                        }
+                        if (vm.count("ignore-low-support-regions") &&
+                            merged.watson_count + merged.crick_count < conf.low_support)
+                        {
+                            std::cout << " -> Remove [" << sample_cell_names[i].second << "  " << chromosomes[chrom] << ":" << merged.start/1.0e6 << "-" << merged.end/1.0e6 << " " << merged.label << "] because it has too few reads (" << (merged.end - merged.start)/1.0e6 << " Mb)" << std::endl;
+                            for (unsigned k = j; k < jj; ++k)
+                                cci[k].label = "remove";
+                        }
+                        j = jj;
+                    }
+                }
+
+                // Now also remove the "remove"-labelled intervals...
+                iter = std::remove_if(cci.begin(), cci.end(),
+                                      [](Interval2 const & a) {return a.label == "remove";});
+                // and then merge adjacent ones again.
+                iter = reduce_adjacent(cci.begin(), iter,
+                                       cci.begin(),
+                                       [](Interval2 const & a, Interval2 const & b) -> bool {return a.label == b.label;},
+                                       [](Interval2 const & a, Interval2 const & b) {Interval2 ret(a); ret.end = b.end; return ret;}
+                                       );
+                 cci.erase(iter, cci.end());
+            } // vm.count("ignore-small-regions") || vm.count("ignore-low-support-regions"))
+
+
+            // Save regions
+            strand_states[i][chrom] = std::move(cci);
 
         } // chrom
     } // i
 
 
+    // Step 7:
+    // Recurrence !
+    // todo
+
+
+    std::ofstream out(conf.f_out.string());
+    std::cout << "[Write] strand states (incl. SCEs): " << conf.f_out.string() << std::endl;
+    if (out.is_open()) {
+        out << "sample\tcell\tchrom\tstart\tend\tstate" << std::endl;
+        for (unsigned i = 0; i < strand_states.size(); ++i)
+            for (unsigned chrom = 0; chrom < chromosomes.size(); ++chrom)
+                for (auto entry : strand_states[i][chrom])
+                    out << sample_cell_names[i].first << "\t"
+                        << sample_cell_names[i].second << "\t"
+                        << chromosomes[chrom] << "\t"
+                        << entry.start << "\t"
+                        << entry.end << "\t"
+                        << entry.label << std::endl;
+    } else {
+        std::cerr << "[Warning] Cannot write to " << conf.f_out << std::endl;
+        return 2;
+    }
 
     return 0;
 }
