@@ -290,6 +290,9 @@ bool count_sorted_reads(std::string const & filename,
  * The values in `SampleInfo.means` and `SampleInfo.vars` will later be used 
  * to estimate the *p* parameter of the negative binomial.
  *
+ * There is a version requiring `good_cells` and a version without (using all
+ * cells)
+ *
  * @param samples Map of cell name to sampleInfo --> variables `means` and 
  *        `vars` are updated.
  * @param cells List of `CellInfos`, which must have `sample_name` set. Also 
@@ -326,7 +329,32 @@ bool calculate_new_cell_mean(std::unordered_map<std::string, SampleInfo> & sampl
     }
     return true;
 }
+bool calculate_new_cell_mean(std::unordered_map<std::string, SampleInfo> & samples,
+                             std::vector<CellInfo> & cells,
+                             std::vector<TGenomeCounts> const & counts,
+                             std::vector<unsigned> const & good_bins)
+{
+    // calculate cell means and cell variances, grouped by sample (not cell)
+    for (unsigned i = 0; i < counts.size(); ++i) {
 
+        // Get mean and var for this cell, but only from good bins!
+        TMeanVarAccumulator<float> acc;
+        for (unsigned bini = 0; bini < good_bins.size(); ++bini) {
+            acc(counts[i][good_bins[bini]].crick_count + counts[i][good_bins[bini]].watson_count);
+        }
+        // emplace finds key if existing and returns (it,false);
+        // otherwise it inserts (key,value) and returns (it,true).
+        auto it = samples.begin();
+        std::tie(it, std::ignore) = samples.emplace(cells[i].sample_name, SampleInfo());
+        float cell_mean = boost::accumulators::mean(acc);
+        float cell_var  = boost::accumulators::variance(acc);
+
+        cells[i].mean_bin_count = cell_mean;
+        (it->second).means.push_back(cell_mean);
+        (it->second).vars.push_back(cell_var);
+    }
+    return true;
+}
 
 
 
