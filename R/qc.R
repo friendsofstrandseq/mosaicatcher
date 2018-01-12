@@ -244,8 +244,8 @@ for (s in unique(d$sample))
                                            rep(scale_factors[class == labels[class=="CC",]$label,]$scale, 2*length(x))),
                                 y      = c(dnbinom(x, a*r,     p),
                                            dnbinom(x, (1-a)*r, p),
-                                           dnbinom(x, r,       p),
-                                           dnbinom(x, r,       p),
+                                           dnbinom(x, r/2,     p),
+                                           dnbinom(x, r/2,     p),
                                            dnbinom(x, (1-a)*r, p),
                                            dnbinom(x, a*r,     p)  ))
                 plt_hist <- plt_hist + geom_line(data = nb, aes(x,y*scale,col=strand))
