@@ -225,10 +225,8 @@ for (s in unique(d$sample))
 
         if (!is.null(f_info)) {
             Ie = info[sample == s & cell == ce,]
-            if(nrow(Ie) < 1) {
-                message("  Cannot find additional info for ", s, " - ", ce)
-            } else if (Ie$pass1 != 1) {
-                #message("didn't pass QC: ", s, " - ", ce)
+            if(nrow(Ie) != 1 || Ie$pass1 != 1 || !all(c("WW","WC","CC") %in% unique(Ie$class))) {
+                message("  Problem finding additional info for ", s, " - ", ce)
             } else {
                 p = Ie$nb_p
                 r = Ie$nb_r
