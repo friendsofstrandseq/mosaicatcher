@@ -553,6 +553,7 @@ struct Conf_simul {
     unsigned seed;
     double p, min_cov, max_cov, alpha, phased_frac;
     unsigned sce_num;
+    std::string sample_name;
 };
 
 
@@ -589,6 +590,7 @@ int main_simulate(int argc, char **argv)
     ("variantFile,V", boost::program_options::value<boost::filesystem::path>(&conf.f_svs), "output SVs and which cells they were simulated in")
     ("segmentFile,U", boost::program_options::value<boost::filesystem::path>(&conf.f_segment), "output optimal segmentation according to SVs and SCEs.")
     ("info,i",        boost::program_options::value<boost::filesystem::path>(&conf.f_info), "Write info about samples")
+    ("sample-name",   boost::program_options::value<std::string>(&conf.sample_name)->default_value("simulated"), "Use this sample name in the output")
     ;
 
     boost::program_options::options_description po_rand("Radnomization parameters");
@@ -732,7 +734,7 @@ int main_simulate(int argc, char **argv)
 
         CellInfo cell;
         cell.median_bin_count = static_cast<unsigned>(cov_per_bin);
-        cell.sample_name = "simulated";
+        cell.sample_name = conf.sample_name;
         cell.cell_name   = std::string("cell_") + std::to_string(i);
         cell.bam_file    = "no_file";
         cell.nb_p        = p;
@@ -862,7 +864,7 @@ int main_simulate(int argc, char **argv)
         if (out.is_open()) {
             out << "sample\tcell\tchrom\tstart\tend\tclass" << std::endl;
             for (unsigned i = 0; i < strand_states.size(); ++i) {
-                out << "simulated" << "\t";
+                out << conf.sample_name << "\t";
                 out << "cell_" << std::to_string(str_states_cells[i]) << "\t";
                 out << chrom_names[strand_states[i].first.chr] << "\t";
                 out << bins[(strand_states[i].first).start].start << "\t";
@@ -972,7 +974,7 @@ int main_simulate(int argc, char **argv)
     std::cout << "[Write] Count table " << conf.f_out.string() << std::endl;
     std::vector<std::pair<std::string, std::string>> sample_cell_names;
     for (unsigned i=0; i<conf.n_cells; ++i) {
-        sample_cell_names.push_back(std::make_pair("simulated", "cell_" + std::to_string(i)));
+        sample_cell_names.push_back(std::make_pair(conf.sample_name, "cell_" + std::to_string(i)));
     }
     io::write_counts_gzip(conf.f_out.string(), final_counts, bins, chrom_names, sample_cell_names);
 
