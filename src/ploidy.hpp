@@ -115,7 +115,7 @@ void setup_HMM_emissions(hmm::HMM<unsigned, hmm::CombinedNegBinAndBinomial> & hm
         for (unsigned w = 0; w <= len; ++w) {
 
             unsigned c = len - w;
-            double ratio = static_cast<double>(c)/static_cast<double>(len);
+            double ratio = (c == 0 || c == len ? (c == 0 ? 0.02 : 0.98) : static_cast<double>(c)/static_cast<double>(len) );
             double r     = (len == 0 ? nb_a : nb_r * static_cast<double>(len)/static_cast<double>(max_ploidy));
             emissions.push_back(hmm::CombinedNegBinAndBinomial(nb_p, r, ratio, (len == ploidy ? prior : prior_others)));
 
