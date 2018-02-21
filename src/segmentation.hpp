@@ -639,24 +639,24 @@ int main_segment(int argc, char** argv) {
                 std::transform(counts[i].begin() + chrom_map[chrom],
                                counts[i].begin() + chrom_map[chrom] + N,
                                tmp.begin(),
-                               [sample_mean](Counter const & c){return (double) c.watson_count / sample_mean;});
+                               [sample_mean](Counter<unsigned> const & c){return (double) c.watson_count / sample_mean;});
                 data.push_back(tmp);
                 std::transform(counts[i].begin() + chrom_map[chrom],
                                counts[i].begin() + chrom_map[chrom] + N,
                                tmp.begin(),
-                               [sample_mean](Counter const & c){return (double) c.crick_count / sample_mean;});
+                               [sample_mean](Counter<unsigned> const & c){return (double) c.crick_count / sample_mean;});
                 data.push_back(tmp);
             } else {
                 std::vector<double> tmp(N);
                 std::transform(counts[i].begin() + chrom_map[chrom],
                                counts[i].begin() + chrom_map[chrom] + N,
                                tmp.begin(),
-                               [](Counter const & c){return (double) c.watson_count;});
+                               [](Counter<unsigned> const & c){return (double) c.watson_count;});
                 data.push_back(tmp);
                 std::transform(counts[i].begin() + chrom_map[chrom],
                                counts[i].begin() + chrom_map[chrom] + N,
                                tmp.begin(),
-                               [](Counter const & c){return (double) c.crick_count;});
+                               [](Counter<unsigned> const & c){return (double) c.crick_count;});
                 data.push_back(tmp);
             }
         }

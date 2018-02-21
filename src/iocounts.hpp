@@ -58,7 +58,7 @@ bool write_counts_gzip(TString const & f_out,
         out << "chrom\tstart\tend\tsample\tcell\tc\tw\tclass" << std::endl;
         for(unsigned i = 0; i < counts.size(); ++i) {
             for (unsigned bin = 0; bin < counts[i].size(); ++bin) {
-                Counter const & cc = counts[i][bin];
+                Counter<unsigned> const & cc = counts[i][bin];
                 out << chrom_name[bins[bin].chr];
                 out << "\t" << bins[bin].start << "\t" << bins[bin].end;
                 out << "\t" << sample_cell_name[i].first;
@@ -84,9 +84,9 @@ bool write_counts_gzip(TString const & f_out,
   * @param sample_cell_names empty vector. Write sample and cell names found in file
   * @param bins empty vector. Write bins found in file
   */
-template <typename TString>
+template <typename TString, typename TPrec>
 bool read_counts_gzip(TString const & f_in,
-                      std::vector<TGenomeCounts> & counts,
+                      std::vector<std::vector<Counter<TPrec>>> & counts,
                       std::vector<std::string> & chromosomes,
                       std::vector<std::pair<std::string,std::string>> & sample_cell_names,
                       std::vector<Interval> & bins)
@@ -251,13 +251,17 @@ bool read_counts_gzip(TString const & f_in,
                 row_end    = std::stoi(fields[2]);
                 row_sample = fields[3];
                 row_cell   = fields[4];
-                row_w      = std::stoi(fields[5]);
-                row_c      = std::stoi(fields[6]);
+                row_w      = boost::lexical_cast<TPrec>(fields[5]);
+                row_c      = boost::lexical_cast<TPrec>(fields[6]);
                 row_type   = fields[7];
             } catch (const std::exception&) {
                 std::cerr << "[read_counts_gzip] Cannot read interger number in: " << line << std::endl;
                 return false;
+            } catch (const boost::bad_lexical_cast&) {
+                std::cerr << "[read_counts_gzip] Cannot read W or Crick number: " << line << std::endl;
+                return false;
             }
+
 
 
             // Derive factor for each of the strings:
@@ -276,7 +280,7 @@ bool read_counts_gzip(TString const & f_in,
                                                               std::make_pair(row_sample, row_cell))
                                              - sample_cell_names.begin());
 
-            Counter & cc = counts[sample_cell_id][bin_id];
+            Counter<unsigned> & cc = counts[sample_cell_id][bin_id];
             cc.watson_count = row_w;
             cc.crick_count  = row_c;
             cc.label        = row_type;
@@ -311,7 +315,7 @@ std::vector<unsigned> get_good_cells(std::vector<TGenomeCounts> const & counts)
     for (unsigned i = 0; i < counts.size(); ++i) {
         if (!std::all_of(counts[i].begin(),
                          counts[i].end(),
-                         [](Counter const & x) { return (x.label == "None");}))
+                         [](Counter<unsigned> const & x) { return (x.label == "None");}))
             good_cells.push_back(i);
     }
     // good_cells must be <= counts and sorted !!

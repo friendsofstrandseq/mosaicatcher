@@ -23,14 +23,15 @@ using interval::Interval;
 /**
  * @ingroup count
  */
+template <typename TInner>
 struct Counter {
     //static const std::vector<std::string> label_names;
     //static const std::map<std::string, uint8_t> label_id;
-    unsigned int watson_count, crick_count;
+    TInner watson_count, crick_count;
     std::string label;
     unsigned n_supplementary;
 
-    Counter() : watson_count(0), crick_count(0), label("None"), n_supplementary(0)
+    Counter() : watson_count(static_cast<TInner>(0)), crick_count(static_cast<TInner>(0)), label("None"), n_supplementary(0)
     {}
 
     bool set_label(std::string const & s) {
@@ -46,7 +47,7 @@ struct Counter {
 /**
  * @ingroup count
  */
-typedef std::vector<Counter> TGenomeCounts;
+typedef std::vector<Counter<unsigned>> TGenomeCounts;
 
 
 /**
@@ -92,7 +93,7 @@ void set_median_per_cell(std::vector<TGenomeCounts> const & counts,
 
     for (unsigned i = 0; i < counts.size(); ++i) {
         TMedianAccumulator<unsigned int> med_acc;
-        for (Counter const & count_bin : counts[i])
+        for (Counter<unsigned> const & count_bin : counts[i])
             med_acc(count_bin.watson_count + count_bin.crick_count);
         cells[i].median_bin_count = boost::accumulators::median(med_acc);
     }
@@ -211,7 +212,7 @@ bool count_sorted_reads(std::string const & filename,
         return false;
     }
 
-    counts.resize(bins.size(), Counter());
+    counts.resize(bins.size(), Counter<unsigned>());
 
     // access samfile chrom per chrom
     for (int32_t chrom = 0; chrom < hdr->n_targets; ++chrom) {
