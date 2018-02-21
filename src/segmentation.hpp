@@ -4,6 +4,9 @@
  file LICENSE.md or http://www.opensource.org/licenses/mit-license.php.
  */
 
+#ifndef segmentation_hpp
+#define segmentation_hpp
+
 #include <cassert>
 #include <iostream>
 #include <vector>
@@ -771,3 +774,4 @@ int main_segment(int argc, char** argv) {
 
 
 
+#endif /* segmentation_hpp */
