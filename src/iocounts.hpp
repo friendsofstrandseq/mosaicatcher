@@ -241,8 +241,8 @@ bool read_counts_gzip(TString const & f_in,
             int32_t     row_end;
             std::string row_sample;
             std::string row_cell;
-            TPrec    row_w;
             TPrec    row_c;
+            TPrec    row_w;
             std::string row_type;
 
             try {
@@ -251,8 +251,8 @@ bool read_counts_gzip(TString const & f_in,
                 row_end    = std::stoi(fields[2]);
                 row_sample = fields[3];
                 row_cell   = fields[4];
-                row_w      = boost::lexical_cast<TPrec>(fields[5]);
-                row_c      = boost::lexical_cast<TPrec>(fields[6]);
+                row_c      = boost::lexical_cast<TPrec>(fields[5]);
+                row_w      = boost::lexical_cast<TPrec>(fields[6]);
                 row_type   = fields[7];
             } catch (const std::exception&) {
                 std::cerr << "[read_counts_gzip] Cannot read interger number in: " << line << std::endl;
@@ -281,8 +281,8 @@ bool read_counts_gzip(TString const & f_in,
                                              - sample_cell_names.begin());
 
             Counter<TPrec> & cc = counts[sample_cell_id][bin_id];
-            cc.watson_count = row_w;
             cc.crick_count  = row_c;
+            cc.watson_count = row_w;
             cc.label        = row_type;
         }
     }
