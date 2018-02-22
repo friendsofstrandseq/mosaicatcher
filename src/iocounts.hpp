@@ -280,7 +280,7 @@ bool read_counts_gzip(TString const & f_in,
                                                               std::make_pair(row_sample, row_cell))
                                              - sample_cell_names.begin());
 
-            Counter<unsigned> & cc = counts[sample_cell_id][bin_id];
+            Counter<TPrec> & cc = counts[sample_cell_id][bin_id];
             cc.watson_count = row_w;
             cc.crick_count  = row_c;
             cc.label        = row_type;
@@ -308,14 +308,14 @@ bool read_counts_gzip(TString const & f_in,
     return true;
 }
 
-
-std::vector<unsigned> get_good_cells(std::vector<TGenomeCounts> const & counts)
+template <typename TPrec>
+std::vector<unsigned> get_good_cells(std::vector<std::vector<Counter<TPrec>>> const & counts)
 {
     std::vector<unsigned> good_cells;
     for (unsigned i = 0; i < counts.size(); ++i) {
         if (!std::all_of(counts[i].begin(),
                          counts[i].end(),
-                         [](Counter<unsigned> const & x) { return (x.label == "None");}))
+                         [](Counter<TPrec> const & x) { return (x.label == "None");}))
             good_cells.push_back(i);
     }
     // good_cells must be <= counts and sorted !!
