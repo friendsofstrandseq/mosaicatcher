@@ -241,8 +241,8 @@ bool read_counts_gzip(TString const & f_in,
             int32_t     row_end;
             std::string row_sample;
             std::string row_cell;
-            unsigned    row_w;
-            unsigned    row_c;
+            TPrec    row_w;
+            TPrec    row_c;
             std::string row_type;
 
             try {
