@@ -37,6 +37,11 @@ if (length(args)>2) {
         else if (is_info_file(x)) { message("* Using INFO file ", args[3]); info = x }
     }
 }
+if (!is.null(sces)) {
+    sces[, chrom := sub('^chr','',chrom)]
+    sces[, chrom := factor(chrom, levels=as.character(c(1:22,'X','Y')), ordered = T)]
+}
+
 
 
 format_Mb <- function(x) {
@@ -225,9 +230,9 @@ for (s in unique(d$sample))
 
         # Rename classes:
         labels = e[,.N,by = class][,label := paste0(class," (n=", N, ")")][]
-        
+
         e[, class := factor(class, levels = labels$class, labels = labels$label)]
-        
+
         # Histogram in upper right corner
         e.melt <- melt.data.table(e, c("chrom","start","end","class"), measure.vars = c("w","c"), variable.name = "strand", value.name = "coverage")
         plt_hist_xlim = 10+3*info_reads_per_bin
@@ -238,7 +243,7 @@ for (s in unique(d$sample))
             theme(text = element_text(size=10), axis.text = element_text(size=8)) +
             scale_fill_manual(values = c(w = "sandybrown", c = "paleturquoise4")) +
             guides(fill=FALSE,col=FALSE) + ylab("bin count") +
-            xlab("reads per bin") + 
+            xlab("reads per bin") +
             facet_wrap(~class, nrow=1, scales = "free")
 
         if (!is.null(info)) {
@@ -299,7 +304,7 @@ for (s in unique(d$sample))
                 }
             }
         }
-        
+
         # If available, write number of SCEs detected
         if (!is.null(sces)) {
             sces_local = sces[sample == s & cell == ce][, .SD[.N>1], by = chrom]
