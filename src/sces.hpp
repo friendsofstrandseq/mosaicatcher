@@ -375,7 +375,7 @@ int main_strand_states(int argc, char **argv)
     std::ofstream out(conf.f_out.string());
     std::cout << "[Write] strand states (incl. SCEs): " << conf.f_out.string() << std::endl;
     if (out.is_open()) {
-        out << "sample\tcell\tchrom\tstart\tend\tstate" << std::endl;
+        out << "sample\tcell\tchrom\tstart\tend\tclass" << std::endl;
         for (unsigned i = 0; i < strand_states.size(); ++i)
             for (unsigned chrom = 0; chrom < chromosomes.size(); ++chrom)
                 for (auto entry : strand_states[i][chrom])
