@@ -65,7 +65,7 @@ struct Interval2 {
 };
 
 
-int main_sces(int argc, char **argv)
+int main_strand_states(int argc, char **argv)
 {
 
     // Command line options
@@ -74,7 +74,7 @@ int main_sces(int argc, char **argv)
     po_generic.add_options()
     ("help,?", "show help message")
     ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("segments.txt"), "output file for counts")
-    ("ignore-small-regions,u", boost::program_options::value<int32_t>(&conf.small_intv_size)->implicit_value(3000000), "Ignore segments of this size or smaller")
+    ("ignore-small-regions,u", boost::program_options::value<int32_t>(&conf.small_intv_size)->implicit_value(5000000), "Ignore segments of this size or smaller")
     ("ignore-low-support-regions,v", boost::program_options::value<int32_t>(&conf.low_support)->implicit_value(100), "Ignore segments with less reads than this")
     ;
 
@@ -128,10 +128,10 @@ int main_sces(int argc, char **argv)
             " 3. Remove small (-u, recommended) or low-supported (-v) regions which\n"
             "    are not concordant with the majority type of the chromosome. This\n"
             "    should again reduce the number of state flips.\n"
-            "    NOTE: Only a single type per chromosome is considered - there are\n"
-            "          chromosomes with more than one SCE, which this algorithm will\n"
-            "          miss."
-            " 4. ...\n"
+            "    NOTE: Only a single strand state is assumed per chromosome - there\n"
+            "          are chromosomes with more than one SCE, which this algorithm\n"
+            "          will miss."
+            " 4. Recurrence - not yet implemented! \n"
             "" << std::endl;
             std::cout << "" << std::endl;
         }
@@ -259,6 +259,9 @@ int main_sces(int argc, char **argv)
                 if (ww == max) majt = "WW";
                 else if (wc == max) majt = "WC";
                 else majt = "CC";
+                if (none >= max) {
+                    std::cerr << "[Warning] The majority of chromosome " << chromosomes[chrom] << " in cell " << sample_cell_names[i].second << " is 'None'." << std::endl;
+                }
             }
 
             if (cci.size()==1) continue;
@@ -285,7 +288,6 @@ int main_sces(int argc, char **argv)
 
             // Step 4:
             // Drop none segments
-            //std::vector<Interval2> new_cci;
             auto iter = std::copy_if(cci.begin(), cci.end(),
                          cci.begin(),
                          [](Interval2 const & x) { return x.label != "None"; });
@@ -308,7 +310,7 @@ int main_sces(int argc, char **argv)
             // Step 6:
             // Remove small non-majt regions, if they are small enough or not
             // supported by enough reads. Note that if multiple small non-majt
-            // are next to another, those are merged and then evaluated.
+            // are next to another, those were already merged before.
             if (vm.count("ignore-small-regions") ||
                 vm.count("ignore-low-support-regions"))
             {
