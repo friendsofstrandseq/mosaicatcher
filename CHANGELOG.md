@@ -4,9 +4,10 @@
 ## Version 0.2
 
 Small features:
- * The simulation accept a random generator seed for reproducible results
+ * Simulation accept a random generator seed for reproducible results
  * (Experimental) new HMM feature for higher ploidies
  * New plot script `R/chrom.R` to plot counts for a single chromosome, incl. SV calls and segments
+ * (Experimental) new strand state classifier, because we had issues with the previously used R script.
 
 ## Version 0.1
 
