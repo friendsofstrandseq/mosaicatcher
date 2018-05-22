@@ -209,20 +209,20 @@ for (s in unique(d$sample))
             facet_grid(.~chrom, switch="x") +
             ylab("Watson | Crick") + xlab(NULL) +
             scale_x_continuous(breaks = pretty_breaks(12), labels = format_Mb) +
-            scale_y_continuous(breaks = pretty_breaks(3)) + 
+            scale_y_continuous(breaks = pretty_breaks(3)) +
             theme_classic() +
             theme(panel.spacing = unit(0.2, "lines"),
                   axis.text.x = element_blank(),
                   axis.ticks.x = element_blank(),
-                  strip.background = element_rect(fill = NA, colour=NA)) + 
+                  strip.background = element_rect(fill = NA, colour=NA)) +
             guides(fill = FALSE) +
             # Dotted lines at median bin count
             geom_segment(data = info_chrom_sizes, aes(xend = xend, x=0, y=-info_reads_per_bin, yend=-info_reads_per_bin),
                          linetype="dotted", col="darkgrey", size=0.5) +
             geom_segment(data = info_chrom_sizes, aes(xend = xend, x=0, y=+info_reads_per_bin, yend=+info_reads_per_bin),
                          linetype="dotted", col="darkgrey", size=0.5) +
-			geom_segment(data = info_chrom_sizes, aes(xend = xend, x=0), y=0, yend=0, size=0.5)
-        
+            geom_segment(data = info_chrom_sizes, aes(xend = xend, x=0), y=0, yend=0, size=0.5)
+
         # Rename classes:
         labels = e[,.N,by = class][,label := paste0(class," (n=", N, ")")][]
         
@@ -238,14 +238,13 @@ for (s in unique(d$sample))
             theme(text = element_text(size=10), axis.text = element_text(size=8)) +
             scale_fill_manual(values = c(w = "sandybrown", c = "paleturquoise4")) +
             guides(fill=FALSE,col=FALSE) + ylab("bin count") +
-            xlab("reads per bin") + facet_wrap(~class, nrow=1, scales = "free")
+            xlab("reads per bin") + 
+            facet_wrap(~class, nrow=1, scales = "free")
 
         if (!is.null(info)) {
             Ie = info[sample == s & cell == ce,]
-            if(nrow(Ie) < 1) {
-                message("  Cannot find additional info for ", s, " - ", ce)
-            } else if (Ie$pass1 != 1) {
-                #message("didn't pass QC: ", s, " - ", ce)
+            if(nrow(Ie) != 1 || Ie$pass1 != 1 || !all(c("WW","WC","CC") %in% unique(Ie$class))) {
+                message("  Problem finding additional info for ", s, " - ", ce)
             } else {
                 p = Ie$nb_p
                 r = Ie$nb_r
@@ -254,16 +253,16 @@ for (s in unique(d$sample))
                 scale_factors = e.melt[,.N, by = .(class,strand,coverage)][, .(scale = max(N)), by = class]
                 nb = data.table(x      = rep(x,6),
                                 strand = rep(c(rep("w",length(x)), rep("c",length(x))),3),
-                                class  = c(rep(labels[class=="WW",]$label, 2*length(x)), 
-                                           rep(labels[class=="WC",]$label ,2*length(x)), 
+                                class  = c(rep(labels[class=="WW",]$label, 2*length(x)),
+                                           rep(labels[class=="WC",]$label ,2*length(x)),
                                            rep(labels[class=="CC",]$label, 2*length(x))),
                                 scale  = c(rep(scale_factors[class == labels[class=="WW",]$label,]$scale, 2*length(x)),
                                            rep(scale_factors[class == labels[class=="WC",]$label,]$scale, 2*length(x)),
                                            rep(scale_factors[class == labels[class=="CC",]$label,]$scale, 2*length(x))),
                                 y      = c(dnbinom(x, a*r,     p),
                                            dnbinom(x, (1-a)*r, p),
-                                           dnbinom(x, r,       p),
-                                           dnbinom(x, r,       p),
+                                           dnbinom(x, r/2,     p),
+                                           dnbinom(x, r/2,     p),
                                            dnbinom(x, (1-a)*r, p),
                                            dnbinom(x, a*r,     p)  ))
                 plt_hist <- plt_hist + geom_line(data = nb, aes(x,y*scale,col=strand))
@@ -295,7 +294,7 @@ for (s in unique(d$sample))
                                x=.29,  y=.80, vjust=1, hjust=0, size=10)
                 if (Ie$pass1 == 1) {
                     all <- all +
-                        draw_label(paste0("NB parameters (p,r,a): ", round(Ie$nb_p,2), ",",  round(Ie$nb_r,2), ",", round(Ie$nb_a,2)),    
+                        draw_label(paste0("NB parameters (p,r,a): ", round(Ie$nb_p,2), ",",  round(Ie$nb_r,2), ",", round(Ie$nb_a,2)),
                                    x=.29,  y=.78, vjust=1, hjust=0, size=10)
                 }
             }

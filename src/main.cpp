@@ -13,6 +13,7 @@
 #include "simulate.hpp"
 #include "calc_bins.hpp"
 #include "sces.hpp"
+#include "ploidy.hpp"
 
 int main(int argc, char **argv)
 {
@@ -32,6 +33,9 @@ int main(int argc, char **argv)
     } else if (argc >= 2 && std::string(argv[1]) == "states") {
         return main_strand_states(argc-1, argv+1);
 
+    } else if (argc >= 2 && std::string(argv[1]) == "hmm") {
+        return main_hmm(argc-1, argv+1);
+
     } else if (argc >= 2 && std::string(argv[1]) == "--version") {
         std::cout << "Mosaicatcher " << STRINGIFYMACRO(MOSAIC_VERSION_MAJOR) ;
         std::cout << "." << STRINGIFYMACRO(MOSAIC_VERSION_MINOR) << " (";
@@ -49,6 +53,7 @@ int main(int argc, char **argv)
         std::cout << "Usage:   " << argv[0] << " [--version] [--help] <command> [options]" << std::endl << std::endl;
         std::cout << "Commands:" << std::endl;
         std::cout << "    count       Count binned reads in Strand-seq cells" << std::endl;
+        //std::cout << "    hmm         Count binned reads in arbitrary ploidy" << std::endl;
         std::cout << "    segment     Find a segmentation across binned counts" << std::endl;
         std::cout << "    simulate    Simulate Strand-seq data" << std::endl;
         std::cout << "    makebins    Create variable-width bins based on real data" << std::endl;

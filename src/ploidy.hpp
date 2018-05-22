@@ -32,74 +32,156 @@
 #include "hmm.hpp"
 #include "iocounts.hpp"
 
-
-/**
- * @file
- * @defgroup count Bin, count and classify W/C reads.
- *
- * Summary of how Strand-seq data is binned, counted and classified.
- *
- * ## Strand-seq read counting
- *
- * @todo write documentation about counting.
-*/
-
-
 using interval::Interval;
 using count::TGenomeCounts;
 using count::Counter;
 
+std::vector<std::string> get_states(unsigned ploidy)
+{
+    assert(ploidy>0 && ploidy < 6);
+    std::vector<std::string> states;
+    for (unsigned len=1; len < ploidy+1; ++len) {
+        for (unsigned w = 0; w <= len; ++w) {
 
-struct Conf {
-    std::vector<boost::filesystem::path> f_in;
-    boost::filesystem::path f_out;
-    boost::filesystem::path f_bins;
-    boost::filesystem::path f_excl;
-    boost::filesystem::path f_info;
-    boost::filesystem::path f_sample_info;
-    boost::filesystem::path f_removed_bins;
-    boost::filesystem::path f_segments;
-    int minMapQual;
-    unsigned int window;
-    std::string mode;
-};
+            unsigned c = len - w;
+            std::string s;
+            for (unsigned i = 0; i < w; ++i)
+                s.push_back('W');
+            for (unsigned i = 0; i < c; ++i)
+                s.push_back('C');
+            states.push_back(std::move(s));
+        }
+    }
+    return states;
+}
 
 
-/**
- *
- */
-void run_standard_HMM(std::vector<TGenomeCounts> & counts,
-                      std::vector<unsigned> const & good_cells,
-                      std::vector<CellInfo>  & cells,
-                      std::vector<unsigned> const & good_bins,
-                      std::vector<int32_t> const & good_map,
-                      std::unordered_map<std::string, SampleInfo> const & samples,
-                      float p_trans)
+void setup_HMM_emissions(hmm::HMM<unsigned, hmm::MultiVariate<hmm::NegativeBinomial>> & hmm,
+                         unsigned ploidy,
+                         double nb_p,
+                         double nb_r,
+                         double nb_a,
+                         double prior,
+                         unsigned max_ploidy = 4)
+{
+    assert(max_ploidy>0 && max_ploidy<6);
+    std::vector<hmm::MultiVariate<hmm::NegativeBinomial>> emissions;
+
+    double prior_others = (1-prior)/static_cast<double>(max_ploidy);
+
+    //std::cout << "MultiVariate<NegativeBinomial>:" << std::endl;
+    for (unsigned len=1; len < max_ploidy+1; ++len) {
+        for (unsigned w = 0; w <= len; ++w) {
+            // e.g. WWWW (with N=4) should be  NB[p,a] x NB[p,(1-a)r]
+            // or   WWWC                       NB[p,3/4r] x NB[p,1/4r]
+            // but  WW ??        I decide for  NB[p,2/4r] x NB[p,a]
+            unsigned c = len - w;
+            double fac_w = (w==0 ? nb_a : w/static_cast<double>(max_ploidy) );
+            double fac_c = (c==0 ? nb_a : c/static_cast<double>(max_ploidy) );
+            hmm::MultiVariate<hmm::NegativeBinomial> distribution
+                ({  hmm::NegativeBinomial(nb_p, fac_w * nb_r),
+                    hmm::NegativeBinomial(nb_p, fac_c * nb_r)
+                }, (len == ploidy ? prior : prior_others));
+            emissions.push_back(std::move(distribution));
+
+            // DEBUG
+            //std::cout << std::setprecision(3) << "\t" << "p = " << nb_p << "\tcell_mean = " << nb_r/nb_p*(1-nb_p) << "\tState = ";
+            //for (unsigned x = 0; x < w; ++x) std::cout << "W";
+            //for (unsigned x = 0; x < c; ++x) std::cout << "C";
+            //std::cout << "\tFactors = [" << fac_w << "\t" << fac_c << "]\t means = [" << fac_w * nb_r/nb_p*(1-nb_p) << "\t" <<  fac_c * nb_r/nb_p*(1-nb_p) << "]" << std::endl;
+
+        }
+    }
+    //std::cout << "-" << std::endl;
+    hmm.set_emissions(emissions);
+}
+
+
+void setup_HMM_emissions(hmm::HMM<unsigned, hmm::CombinedNegBinAndBinomial> & hmm,
+                         unsigned ploidy,
+                         double nb_p,
+                         double nb_r,
+                         double nb_a,
+                         double prior,
+                         unsigned max_ploidy)
+{
+    assert(max_ploidy>0 && max_ploidy<6);
+    std::vector<hmm::CombinedNegBinAndBinomial> emissions;
+
+    double prior_others = (1-prior)/static_cast<double>(max_ploidy);
+
+    //std::cout << "CombinedNegBinAndBinomial:" << std::endl;
+    for (unsigned len=1; len < max_ploidy+1; ++len) {
+        for (unsigned w = 0; w <= len; ++w) {
+
+            unsigned c = len - w;
+            double ratio = (c == 0 || c == len ? (c == 0 ? 0.02 : 0.98) : static_cast<double>(c)/static_cast<double>(len) );
+            double r     = (len == 0 ? nb_a : nb_r * static_cast<double>(len)/static_cast<double>(max_ploidy));
+            emissions.push_back(hmm::CombinedNegBinAndBinomial(nb_p, r, ratio, (len == ploidy ? prior : prior_others)));
+
+            // DEBUG
+            //std::cout << std::setprecision(3) << "\t" << "p = " << nb_p << "\tcell_mean = " << nb_r/nb_p*(1-nb_p) << "\tState = ";
+            //for (unsigned x = 0; x < w; ++x) std::cout << "W";
+            //for (unsigned x = 0; x < c; ++x) std::cout << "C";
+            //std::cout << "\t NB mean = " << r/nb_p*(1-nb_p) << "\tBinomial ratio = " << ratio << std::endl;
+
+        }
+    }
+    //std::cout << "-" << std::endl;
+    hmm.set_emissions(emissions);
+
+    std::cout << "NB params for ploidy " << ploidy << ": p = " << nb_p << "\tr = " << nb_r << "\tmean = " << nb_r/nb_p*(1-nb_p) << std::endl;   
+}
+
+
+
+
+
+
+template <typename TDistribution>
+typename hmm::HMM<unsigned, TDistribution> setup_HMM(unsigned max_ploidy, double p_trans)
+{
+    assert(max_ploidy>0 && max_ploidy<6);
+    std::vector<std::string> states = get_states(max_ploidy);
+    std::vector<double> initials(states.size(), 1/static_cast<double>(states.size()));
+    std::vector<double> transitions(states.size() * states.size(), p_trans);
+    for (unsigned i = 0; i < states.size(); ++i) {
+        transitions[i * states.size() + i] = 1 - (states.size() - 1) * p_trans;
+    }
+    hmm::HMM<unsigned, TDistribution> hmm(states);
+    hmm.set_initials(initials);
+    hmm.set_transitions(transitions);
+    return hmm;
+}
+
+
+template <typename TDistribution>
+void run_generic_HMM(std::vector<TGenomeCounts> & counts,
+                     std::vector<unsigned> const & good_cells,
+                     std::vector<CellInfo>  & cells,
+                     std::vector<unsigned> const & good_bins,
+                     std::vector<int32_t> const & good_map,
+                     std::unordered_map<std::string, SampleInfo> const & samples,
+                     float p_trans,
+                     double prior,
+                     unsigned ploidy = 2,
+                     unsigned max_ploidy = 4)
 {
     // Set up and run HMM:
-    hmm::HMM<unsigned, hmm::MultiVariate<hmm::NegativeBinomial> > hmm({"CC", "WC", "WW"});
-    hmm.set_initials({0.3333, 0.3333, 0.3333});
-    hmm.set_transitions({1-2*p_trans, p_trans,     p_trans,    \
-        p_trans,     1-2*p_trans, p_trans,    \
-        p_trans,     p_trans,     1-2*p_trans});
+    hmm::HMM<unsigned, TDistribution> hmm = setup_HMM<TDistribution>(max_ploidy, p_trans);
+
+    //std::cout << "HMM states: ";
+    //for (auto x: hmm.state_labels) {std::cout << x << "\t";}
+    //std::cout << std::endl;
 
     for (auto i = good_cells.begin(); i != good_cells.end(); ++i)
     {
         // set NB(n,p) parameters according to `p` of sample and mean of cell.
         float p = samples.at(cells[*i].sample_name).p;
-        float n = (float)cells[*i].mean_bin_count * p / (1-p);
-        float a = 0.1;
-        cells[*i].nb_p = p;
-        cells[*i].nb_r = n;
-        cells[*i].nb_a = a;
+        float r = (float)cells[*i].mean_bin_count * p / (1-p);
+        float a = 0.05;
 
-        //std::cout << "NB parameters for cell <?>" << ": p=" << p << "\tn=" << n << "\tz=" << z << std::endl;
-
-        hmm.set_emissions( {\
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p, (1-a)*n), hmm::NegativeBinomial(p, a*n)}), // CC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p, n/2),     hmm::NegativeBinomial(p, n/2)}), // WC
-            hmm::MultiVariate<hmm::NegativeBinomial>({hmm::NegativeBinomial(p, a*n),     hmm::NegativeBinomial(p, (1-a)*n)})  // WW
-        });
+        setup_HMM_emissions(hmm, ploidy, p, r, a, prior, max_ploidy);
         run_HMM(hmm, counts[*i], good_bins, good_map);
     }
 
@@ -110,11 +192,34 @@ void run_standard_HMM(std::vector<TGenomeCounts> & counts,
 
 
 
-int main_count(int argc, char **argv)
+
+
+struct Conf_ploidy {
+    std::vector<boost::filesystem::path> f_in;
+    boost::filesystem::path f_out;
+    boost::filesystem::path f_bins;
+    boost::filesystem::path f_excl;
+    boost::filesystem::path f_info;
+    boost::filesystem::path f_segments;
+    unsigned ploidy;
+    unsigned max_ploidy;
+    int minMapQual;
+    unsigned int window;
+    std::string model;
+    double prior;
+    Conf_ploidy() : max_ploidy(4)
+    {}
+};
+
+
+
+
+
+int main_hmm(int argc, char **argv)
 {
 
     // Command line options
-    Conf conf;
+    Conf_ploidy conf;
     boost::program_options::options_description generic("Generic options");
     generic.add_options()
     ("help,?", "show help message")
@@ -125,13 +230,14 @@ int main_count(int argc, char **argv)
     ("bins,b", boost::program_options::value<boost::filesystem::path>(&conf.f_bins), "BED file with manual bins (disables -w). See also 'makebins'")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&conf.f_excl), "Exclude chromosomes and regions")
     ("info,i", boost::program_options::value<boost::filesystem::path>(&conf.f_info), "Write info about samples")
+    ("ploidy,p", boost::program_options::value<unsigned>(&conf.ploidy)->default_value(2), "Assume cells have this ploidy level (max 4)")
+    ("prior,P",  boost::program_options::value<double>(&conf.prior)->notifier(in_range(0,1,"prior")), "Prior probability for copy number <p> (penalize other copy number states. Default: All copy numbers are equally probable)")
+    ("model,m", boost::program_options::value<std::string>(&conf.model)->default_value("multiNB"), "Models for HMM: multiNB, Binomial+NB")
     ;
 
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
     ("input-file", boost::program_options::value<std::vector<boost::filesystem::path> >(&conf.f_in), "input bam file(s)")
-    ("sample_info,S", boost::program_options::value<boost::filesystem::path>(&conf.f_sample_info),   "write info per sample")
-    ("removed_bins,R", boost::program_options::value<boost::filesystem::path>(&conf.f_removed_bins), "bins that were removed (bed file)")
     ;
 
     boost::program_options::positional_options_description pos_args;
@@ -155,6 +261,14 @@ int main_count(int argc, char **argv)
         std::cerr << "[Error] Exclude chromosomes (-x) have no effect when -b is specified. Stop" << std::endl << std::endl;
         goto print_usage_and_exit;
     }
+    if (conf.model != "multiNB" && conf.model != "Binomial+NB") {
+        std::cerr << "[Error] Unknown --model for the HMM." << std::endl << std::endl;
+        goto print_usage_and_exit;
+    }
+    if (vm.count("prior") && (conf.prior < 0 || conf.prior > 1)) {
+        std::cerr << "[Error] Prior probability (for CN " << conf.ploidy << ") has to be between 0 and 1. By default all CNs will be equally likely" << std::endl << std::endl;
+        goto print_usage_and_exit;
+    }
 
     if (vm.count("help") || !vm.count("input-file"))
     {
@@ -162,9 +276,10 @@ int main_count(int argc, char **argv)
         std::cout << std::endl;
         std::cout << "Mosaicatcher " << STRINGIFYMACRO(MOSAIC_VERSION_MAJOR);
         std::cout << "." << STRINGIFYMACRO(MOSAIC_VERSION_MINOR) << std::endl;
-        std::cout << "> Count reads from Strand-seq BAM files." << std::endl;
+        std::cout << "> Count reads from Strand-seq BAM files..." << std::endl;
+        std::cout << "  Now for different ploidy levels, too!" << std::endl;
         std::cout << std::endl;
-        std::cout << "Usage:   " << argv[0] << " [OPTIONS] <cell1.bam> <cell2.bam> ..." << std::endl << std::endl;
+        std::cout << "Usage:   " << argv[0] << " --ploidy N [OPTIONS] <cell1.bam> <cell2.bam> ..." << std::endl << std::endl;
         std::cout << visible_options << std::endl;
         std::cout << "Notes:" << std::endl;
         std::cout << "  * writes a table of bin counts and state classifcation as a gzip file (default: out.txt.gz)" << std::endl;
@@ -250,7 +365,7 @@ int main_count(int argc, char **argv)
         std::vector<Interval> exclude;
         if (vm.count("exclude")) {
             read_exclude_file(conf.f_excl.string(), hdr, exclude, vm.count("verbose"));
-            sort(exclude.begin(), exclude.end(), interval::invt_less);
+            sort(exclude.begin(), exclude.end(), interval::less);
         }
         if (vm.count("verbose")) std::cout << "[Info] Creating " << round(conf.window/1000) << "kb bins with " << exclude.size() << " excluded regions" << std::endl;
         create_fixed_bins(bins,
@@ -338,24 +453,6 @@ int main_count(int argc, char **argv)
         / std::inner_product(s.means.begin(), s.means.end(), s.vars.begin(), 0.0f);
     }
 
-    // Write sample information to file
-    if (vm.count("sample_info")) {
-        if (vm.count("verbose")) std::cout << "[Write] sample information: " << conf.f_sample_info.string() << std::endl;
-        std::ofstream out(conf.f_sample_info.string());
-        if (out.is_open()) {
-            out << "sample\tcells\tp\tmeans\tvars" << std::endl;
-            for (auto it = samples.begin(); it != samples.end(); ++it) {
-                SampleInfo const & s = it->second;
-                out << it->first << "\t" << s.means.size() << "\t" << s.p << "\t" << s.means[0];
-                for (unsigned k=1; k<s.means.size(); ++k) out << "," << s.means[k];
-                out << "\t" << s.vars[0];
-                for (unsigned k=1; k<s.vars.size(); ++k) out << "," << s.vars[k];
-                out << std::endl;
-            }
-        } else {
-            std::cerr << "[Warning] Cannot write to " << conf.f_sample_info.string() << std::endl;
-        }
-    }
 
 
 
@@ -364,14 +461,33 @@ int main_count(int argc, char **argv)
     // Chapter: Run HMM
     // ================
     //
-    run_standard_HMM( counts,
-                      good_cells,
-                      cells,
-                      good_bins,
-                      good_map,
-                      samples,
-                      10.0f / bins.size());
-
+    double prior = (vm.count("prior") ? conf.prior : 1.0/static_cast<double>(conf.max_ploidy));
+    std::cout << "[Info] Running HMM with model " << conf.model << " and expected ploidy ";
+    std::cout << std::setprecision(3) << conf.ploidy << " (prior = " << prior << ")" << std::endl;
+    if (conf.model == "multiNB")
+        run_generic_HMM<hmm::MultiVariate<hmm::NegativeBinomial>>(
+                    counts,
+                    good_cells,
+                    cells,
+                    good_bins,
+                    good_map,
+                    samples,
+                    10.0f / bins.size(),
+                    prior,
+                    conf.ploidy,
+                    conf.max_ploidy);
+    if (conf.model == "Binomial+NB")
+        run_generic_HMM<hmm::CombinedNegBinAndBinomial>(
+                    counts,
+                    good_cells,
+                    cells,
+                    good_bins,
+                    good_map,
+                    samples,
+                    10.0f / bins.size(),
+                    prior,
+                    conf.ploidy,
+                    conf.max_ploidy);
 
 
 

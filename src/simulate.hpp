@@ -188,15 +188,15 @@ struct phased_counts {
  *        distribution).
  * @return Final Watson/Crick counts that can be plotted.
  */
+template <typename TRandomDev>
 TGenomeCounts render_cell(THapCount const & hapls,
                           std::vector<int32_t> const & chrom_map,
                           float sce_prob,
                           std::vector<std::pair<Interval, std::string>> & strand_states,
                           std::vector<phased_counts> & phases,
+                          TRandomDev & rd_gen,
                           float phased_frac = 0.1)
 {
-    std::random_device rd;
-    std::mt19937 rd_gen(rd());
     std::uniform_real_distribution<> rd_unif(0,1);
 
     // Final counts to be written
@@ -550,9 +550,10 @@ struct Conf_simul {
     boost::filesystem::path f_svs;
     boost::filesystem::path f_segment;
     boost::filesystem::path f_info;
-
+    unsigned seed;
     double p, min_cov, max_cov, alpha, phased_frac;
     unsigned sce_num;
+    std::string sample_name;
 };
 
 
@@ -575,7 +576,8 @@ int main_simulate(int argc, char **argv)
     po_generic.add_options()
     ("help,?", "show help message")
     ("verbose,v", "tell me more")
-    ("window,w", boost::program_options::value<unsigned>(&conf.window)->default_value(200000)->notifier(in_range(1000,10000000,"window")), "window size of fixed windows")
+    ("seed", boost::program_options::value<unsigned>(&conf.seed), "Random generator seed")
+    ("window,w", boost::program_options::value<unsigned>(&conf.window)->default_value(100000)->notifier(in_range(1000,10000000,"window")), "window size of fixed windows")
     ("numcells,n", boost::program_options::value<unsigned>(&conf.n_cells)->default_value(10)->notifier(in_range(0,500,"numcells")), "number of cells to simulate")
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&conf.f_fai), "Chrom names & length file. Default: GRch38")
     ;
@@ -588,6 +590,7 @@ int main_simulate(int argc, char **argv)
     ("variantFile,V", boost::program_options::value<boost::filesystem::path>(&conf.f_svs), "output SVs and which cells they were simulated in")
     ("segmentFile,U", boost::program_options::value<boost::filesystem::path>(&conf.f_segment), "output optimal segmentation according to SVs and SCEs.")
     ("info,i",        boost::program_options::value<boost::filesystem::path>(&conf.f_info), "Write info about samples")
+    ("sample-name",   boost::program_options::value<std::string>(&conf.sample_name)->default_value("simulated"), "Use this sample name in the output")
     ;
 
     boost::program_options::options_description po_rand("Radnomization parameters");
@@ -666,6 +669,7 @@ int main_simulate(int argc, char **argv)
         return 0;
     }
 
+
     std::chrono::steady_clock::time_point t1, t2;
 
     // global vars
@@ -705,7 +709,11 @@ int main_simulate(int argc, char **argv)
     std::random_device rd;
     std::mt19937 rd_gen(rd());
     boost::random::mt19937 rd_gen_boost;
-
+    if (vm.count("seed")) {
+        rd_gen_boost.seed(conf.seed);
+        rd_gen      .seed(conf.seed);
+        std::cout << "[Info] Using random seed " << conf.seed << std::endl;
+    }
 
 
     // Generate basic haplotype counts of each cells, including random noise
@@ -726,7 +734,7 @@ int main_simulate(int argc, char **argv)
 
         CellInfo cell;
         cell.median_bin_count = static_cast<unsigned>(cov_per_bin);
-        cell.sample_name = "simulated";
+        cell.sample_name = conf.sample_name;
         cell.cell_name   = std::string("cell_") + std::to_string(i);
         cell.bam_file    = "no_file";
         cell.nb_p        = p;
@@ -832,6 +840,7 @@ int main_simulate(int argc, char **argv)
                                            (float)conf.sce_num / bins.size(), // sce_probability
                                            strand_states, // Intervals with inherited strand states
                                            phase,
+                                           rd_gen,
                                            conf.phased_frac));
 
         // note down which cells belong to these intervals
@@ -855,7 +864,7 @@ int main_simulate(int argc, char **argv)
         if (out.is_open()) {
             out << "sample\tcell\tchrom\tstart\tend\tclass" << std::endl;
             for (unsigned i = 0; i < strand_states.size(); ++i) {
-                out << "simulated" << "\t";
+                out << conf.sample_name << "\t";
                 out << "cell_" << std::to_string(str_states_cells[i]) << "\t";
                 out << chrom_names[strand_states[i].first.chr] << "\t";
                 out << bins[(strand_states[i].first).start].start << "\t";
@@ -874,12 +883,6 @@ int main_simulate(int argc, char **argv)
             cells[i].n_mapped += final_counts[i][bin].watson_count + final_counts[i][bin].crick_count;
         }
     }
-    if (vm.count("info")) {
-        std::cout << "[Write] Cell info to " << conf.f_info.string() << ". Note that NB parameters are estimated before SVs are introduced." << std::endl;
-        write_cell_info(conf.f_info.string(), cells);
-    }
-
-
 
     //
     // Chapter: Filter cells and bins and run HMM
@@ -889,11 +892,16 @@ int main_simulate(int argc, char **argv)
     // median per cell
     count::set_median_per_cell(final_counts, cells);
 
-    // filter cells with low counts
+    // filter cells with low counts and set pass_qc = false for bad cells;
     std::vector<unsigned> good_cells;
     good_cells = count::get_good_cells(final_counts, cells);
+    for (auto c : cells) c.pass_qc = false;
+    for (unsigned cid : good_cells) cells[cid].pass_qc = true;
+    if (cells.size() > good_cells.size())
+        std::cout << "[Info] " << cells.size() - good_cells.size() << "/" << cells.size()
+                  << " cells were deemed QC fail by HMM (which is purely based on coverage for now)" << std::endl;
 
-    // filter bins with abnormal counts
+    // filter bins with abnormal counts (not happening here)
     std::vector<unsigned> good_bins(bins.size());
     std::iota(good_bins.begin(), good_bins.end(), 0); // fill with 0,1,2,...
 
@@ -920,6 +928,15 @@ int main_simulate(int argc, char **argv)
     t2 = std::chrono::steady_clock::now();
     time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
     if (conf.verbose) std::cout << "[Info] Running HMM took " << time.count() << " sec." << std::endl;
+
+
+    // Write info files
+    if (vm.count("info")) {
+        std::cout << "[Write] Cell info to " << conf.f_info.string() << ". Note that NB parameters are estimated before SVs are introduced." << std::endl;
+        write_cell_info(conf.f_info.string(), cells);
+    }
+
+
 
 
     // write down phases
@@ -957,7 +974,7 @@ int main_simulate(int argc, char **argv)
     std::cout << "[Write] Count table " << conf.f_out.string() << std::endl;
     std::vector<std::pair<std::string, std::string>> sample_cell_names;
     for (unsigned i=0; i<conf.n_cells; ++i) {
-        sample_cell_names.push_back(std::make_pair("simulated", "cell_" + std::to_string(i)));
+        sample_cell_names.push_back(std::make_pair(conf.sample_name, "cell_" + std::to_string(i)));
     }
     io::write_counts_gzip(conf.f_out.string(), final_counts, bins, chrom_names, sample_cell_names);
 

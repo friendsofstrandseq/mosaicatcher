@@ -1,6 +1,13 @@
 # Changelog
 
 
+## Version 0.2
+
+Small features:
+ * The simulation accept a random generator seed for reproducible results
+ * (Experimental) new HMM feature for higher ploidies
+ * New plot script `R/chrom.R` to plot counts for a single chromosome, incl. SV calls and segments
+
 ## Version 0.1
 
 First tagged version. The tool is far from being finished, but some functionality is already available.
