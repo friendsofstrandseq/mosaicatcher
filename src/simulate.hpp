@@ -215,11 +215,11 @@ TGenomeCounts render_cell(THapCount const & hapls,
         std::string state = std::string(W_h1?"W":"C") + std::string(W_h2?"W":"C");
 
         // Iterate over bins
-        unsigned start_bin = 0;
+        unsigned start_bin = chrom_map[chrom];
         for(unsigned bin = chrom_map[chrom]; bin < chrom_map[chrom+1]; ++bin)
         {
             // Small chance of an SCE:
-            if(bin>0 && rd_unif(rd_gen) < sce_prob)
+            if(bin > chrom_map[chrom] && rd_unif(rd_gen) < sce_prob)
             {
                 // Write down interval
                 strand_states.push_back(std::make_pair(Interval(chrom, start_bin, bin-1), state));
@@ -599,7 +599,7 @@ int main_simulate(int argc, char **argv)
     ("minCoverage,c", boost::program_options::value<double>(&conf.min_cov)->default_value(10)->notifier(in_range(1,500,"minCoverage")), "min. read coverage per bin")
     ("maxCoverage,C", boost::program_options::value<double>(&conf.max_cov)->default_value(60)->notifier(in_range(1,500,"maxCoverage")), "max. read coverage per bin")
     ("alpha,a",       boost::program_options::value<double>(&conf.alpha)->default_value(0.1,"0.1")->notifier(in_range(0,1,"alpha")), "noise added to all bins: mostly 0, but for a fraction alpha drawn from geometrix distribution")
-    ("scesPerCell,s", boost::program_options::value<unsigned>(&conf.sce_num)->default_value(4)->notifier(in_range(0,20,"scesPerCell")), "Average number of SCEs per cell")
+    ("scesPerCell,s", boost::program_options::value<unsigned>(&conf.sce_num)->default_value(4)->notifier(in_range(0,200,"scesPerCell")), "Average number of SCEs per cell")
     ("phasedFraction,z", boost::program_options::value<double>(&conf.phased_frac)->default_value(0.1)->notifier(in_range(0,1,"scesPerCell")), "Average number of SCEs per cell")
     ;
 
