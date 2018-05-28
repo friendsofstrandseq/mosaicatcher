@@ -208,7 +208,6 @@ int main_strand_states(int argc, char **argv)
     for (unsigned i = 0; i < counts.size(); ++i) {
         for (int32_t chrom = 0; chrom < chromosomes.size(); ++chrom) {
 
-
             std::vector<Interval2> cci;
 
             // Skip empty chromosomes
@@ -264,101 +263,107 @@ int main_strand_states(int argc, char **argv)
                 }
             }
 
-            if (cci.size()==1) continue;
 
+            if (cci.size()>1) {
 
-            // Part 3:
-            // Mke sure to extend to the ends of the chromosomes by replacing
-            // 'None' segments with the neighboring label. This is to make sure
-            // that segments cover the whole chromosome (except if the SCE
-            // occurs within an internal None segment, then there will be an
-            // internal gap.
-            {
-                if (cci.size()>1 && cci[0].label == "None") {
-                    cci[1].start = cci[0].start;
-                    cci.erase(cci.begin());
-                }
-                unsigned N = cci.size() -1;
-                if (N>0 && cci[N].label == "None") {
-                    cci[N-1].end = cci[N].end;
-                    cci.pop_back();
-                }
-            }
-
-
-            // Step 4:
-            // Drop none segments
-            auto iter = std::copy_if(cci.begin(), cci.end(),
-                         cci.begin(),
-                         [](Interval2 const & x) { return x.label != "None"; });
-            cci.erase(iter, cci.end());
-
-
-
-            // Step 5:
-            // Merge neighboring segments if they have the same state.
-            iter = reduce_adjacent(cci.begin(),
-                                   cci.end(),
-                                   cci.begin(),
-                                   [](Interval2 const & a, Interval2 const & b) -> bool {return a.label == b.label;},
-                                   [](Interval2 const & a, Interval2 const & b) {Interval2 ret(a); ret.end = b.end; return ret;}
-                                   );
-            cci.erase(iter, cci.end());
-
-
-
-            // Step 6:
-            // Remove small non-majt regions, if they are small enough or not
-            // supported by enough reads. Note that if multiple small non-majt
-            // are next to another, those were already merged before.
-            if (vm.count("ignore-small-regions") ||
-                vm.count("ignore-low-support-regions"))
-            {
-                for (unsigned j = 0; j < cci.size(); ++j) {
-
-                    Interval2 merged(cci[j]);
-                    if (merged.label != majt) {
-
-                        // if there are multiple non-majt elements; combine them
-                        unsigned jj = j;
-                        while(jj < cci.size() && cci[jj].label != majt) {
-                            merged.end = cci[jj].end;
-                            merged.label = "mixed";
-                            merged.watson_count += cci[jj].watson_count;
-                            merged.crick_count += cci[jj].crick_count;
-                            ++jj;
-                        }
-
-                        if (vm.count("ignore-small-regions") &&
-                            merged.end - merged.start <= conf.small_intv_size)
-                        {
-                            std::cout << " -> Remove [" << sample_cell_names[i].second << "  " << chromosomes[chrom] << ":" << merged.start/1.0e6 << "-" << merged.end/1.0e6 << " " << merged.label << "] because it's too small (" << (merged.end - merged.start)/1.0e6 << " Mb)" << std::endl;
-                            for (unsigned k = j; k < jj; ++k)
-                                cci[k].label = "remove";
-                        }
-                        if (vm.count("ignore-low-support-regions") &&
-                            merged.watson_count + merged.crick_count < conf.low_support)
-                        {
-                            std::cout << " -> Remove [" << sample_cell_names[i].second << "  " << chromosomes[chrom] << ":" << merged.start/1.0e6 << "-" << merged.end/1.0e6 << " " << merged.label << "] because it has too few reads (" << (merged.end - merged.start)/1.0e6 << " Mb)" << std::endl;
-                            for (unsigned k = j; k < jj; ++k)
-                                cci[k].label = "remove";
-                        }
-                        j = jj;
+                // Part 3:
+                // Make sure to extend to the ends of the chromosomes by replacing
+                // 'None' segments with the neighboring label. This is to make sure
+                // that segments cover the whole chromosome (except if the SCE
+                // occurs within an internal None segment, then there will be an
+                // internal gap.
+                {
+                    if (cci.size()>1 && cci[0].label == "None") {
+                        cci[1].start = cci[0].start;
+                        cci.erase(cci.begin());
+                    }
+                    unsigned N = cci.size() -1;
+                    if (N>0 && cci[N].label == "None") {
+                        cci[N-1].end = cci[N].end;
+                        cci.pop_back();
                     }
                 }
 
-                // Now also remove the "remove"-labelled intervals...
-                iter = std::remove_if(cci.begin(), cci.end(),
-                                      [](Interval2 const & a) {return a.label == "remove";});
-                // and then merge adjacent ones again.
-                iter = reduce_adjacent(cci.begin(), iter,
+
+                // Step 4:
+                // Drop none segments
+                auto iter = std::copy_if(cci.begin(), cci.end(),
+                             cci.begin(),
+                             [](Interval2 const & x) { return x.label != "None"; });
+                cci.erase(iter, cci.end());
+
+
+
+                // Step 5:
+                // Merge neighboring segments if they have the same state.
+                iter = reduce_adjacent(cci.begin(),
+                                       cci.end(),
                                        cci.begin(),
                                        [](Interval2 const & a, Interval2 const & b) -> bool {return a.label == b.label;},
-                                       [](Interval2 const & a, Interval2 const & b) {Interval2 ret(a); ret.end = b.end; return ret;}
+                                       [](Interval2 const & a, Interval2 const & b) {
+                                           Interval2 ret(a);
+                                           ret.end = b.end;
+                                           ret.watson_count += b.watson_count;
+                                           ret.crick_count += b.crick_count;
+                                           return ret;}
                                        );
-                 cci.erase(iter, cci.end());
-            } // vm.count("ignore-small-regions") || vm.count("ignore-low-support-regions"))
+                cci.erase(iter, cci.end());
 
+
+
+                // Step 6:
+                // Remove small non-majt regions, if they are small enough or not
+                // supported by enough reads. Note that if multiple small non-majt
+                // are next to another, those were already merged before.
+                if (vm.count("ignore-small-regions") ||
+                    vm.count("ignore-low-support-regions"))
+                {
+                    for (unsigned j = 0; j < cci.size(); ++j) {
+
+                        Interval2 merged(cci[j]);
+                        if (merged.label != majt) {
+
+                            // if there are multiple non-majt elements; combine them
+                            unsigned jj = j;
+                            while(jj < cci.size() && cci[jj].label != majt) {
+                                merged.end = cci[jj].end;
+                                merged.label = "mixed";
+                                merged.watson_count += cci[jj].watson_count;
+                                merged.crick_count += cci[jj].crick_count;
+                                ++jj;
+                            }
+
+                            if (vm.count("ignore-small-regions") &&
+                                merged.end - merged.start <= conf.small_intv_size)
+                            {
+                                std::cout << " -> Remove [" << sample_cell_names[i].second << "  " << chromosomes[chrom] << ":" << merged.start/1.0e6 << "-" << merged.end/1.0e6 << " " << merged.label << "] because it's too small (" << (merged.end - merged.start)/1.0e6 << " Mb)" << std::endl;
+                                for (unsigned k = j; k < jj; ++k)
+                                    cci[k].label = "remove";
+                            }
+                            if (vm.count("ignore-low-support-regions") &&
+                                merged.watson_count + merged.crick_count < conf.low_support)
+                            {
+                                std::cout << " -> Remove [" << sample_cell_names[i].second << "  " << chromosomes[chrom] << ":" << merged.start/1.0e6 << "-" << merged.end/1.0e6 << " " << merged.label << "] because it has too few reads (" << (merged.end - merged.start)/1.0e6 << " Mb)" << std::endl;
+                                for (unsigned k = j; k < jj; ++k)
+                                    cci[k].label = "remove";
+                            }
+                            j = jj;
+                        }
+                    }
+
+                    // Now also remove the "remove"-labelled intervals...
+                    iter = std::remove_if(cci.begin(), cci.end(),
+                                          [](Interval2 const & a) {return a.label == "remove";});
+                    // and then merge adjacent ones again.
+                    iter = reduce_adjacent(cci.begin(), iter,
+                                           cci.begin(),
+                                           [](Interval2 const & a, Interval2 const & b) -> bool {return a.label == b.label;},
+                                           [](Interval2 const & a, Interval2 const & b) {Interval2 ret(a); ret.end = b.end; return ret;}
+                                           );
+                     cci.erase(iter, cci.end());
+                } // vm.count("ignore-small-regions") || vm.count("ignore-low-support-regions"))
+
+            } // cci.size()>1
 
             // Save regions
             strand_states[i][chrom] = std::move(cci);
