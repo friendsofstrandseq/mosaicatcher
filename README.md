@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/friendsofstrandseq/mosaicatcher.svg?branch=develop)](https://travis-ci.org/friendsofstrandseq/mosaicatcher)
+[![Build Status](https://travis-ci.org/friendsofstrandseq/mosaicatcher.svg?branch=master)](https://travis-ci.org/friendsofstrandseq/mosaicatcher)
 
 # Processing Strand-seq data
 
