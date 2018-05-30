@@ -2,12 +2,13 @@
 
 
 ## Version 0.2
-
-Small features:
- * Simulation accept a random generator seed for reproducible results
+:
+ * Simulation accept a random generator seed for reproducible results and can output phased reads.
  * (Experimental) new HMM feature for higher ploidies
  * New plot script `R/chrom.R` to plot counts for a single chromosome, incl. SV calls and segments
  * (Experimental) new strand state classifier, because we had issues with the previously used R script.
+ * Fixed bugs, e.g. in simulations (281ea3789dd2674323671bd6ab11cc118e90d7e6, abd51c38a46b3ee8c5f29849ff6daaaf245c2f80),
+   in the plot function, and in some of the new functionailies
 
 ## Version 0.1
 
@@ -35,7 +36,6 @@ First tagged version. The tool is far from being finished, but some functionalit
 
 #### Todo: code clean up
 
- * `git push --delete segmentation`
  * Remove dependencies of HTSlib from most headers
  * More documentation
  * Fix warnings (mostly int vs unsigned comparisons)
