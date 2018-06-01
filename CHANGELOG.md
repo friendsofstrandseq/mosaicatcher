@@ -1,8 +1,11 @@
 # Changelog
 
+## Version 0.3
+
+ * New features for segmentation: penalize or ignore `None` bins
 
 ## Version 0.2
-:
+
  * Simulation accept a random generator seed for reproducible results and can output phased reads.
  * (Experimental) new HMM feature for higher ploidies
  * New plot script `R/chrom.R` to plot counts for a single chromosome, incl. SV calls and segments
