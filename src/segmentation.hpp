@@ -379,7 +379,7 @@ int main_segment(int argc, char** argv) {
     ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(100000000), "maximum segment length")
     ("penalize-none", boost::program_options::value<float>(&conf.none_penalty)->implicit_value(100), "Penalize segments through removed bins (which are marked by 'None' in the counts table).")
     ("remove-none", "Remove segments through removed bins before segmentation. Mutually exclusive with --penalize-none.")
-    ("normalize-cells", "Instead of using raw counts for each strand, normalize them per cell. This way all cells contribute equally.")
+    ("do-not-normalize-cells", "Instead of using raw counts for each strand, normalize them per cell. This way all cells contribute equally.")
     ("do-not-remove-bad-cells", "Keep all cells (by default, cells which are marked 'None' in all bins get removed")
     ;
 
@@ -498,7 +498,7 @@ int main_segment(int argc, char** argv) {
 
     // Determine window size & Mean count per sample
     unsigned window_size;
-    std::vector<float> mean_per_sample(counts.size());
+    std::vector<float> mean_per_cell(counts.size());
     {
         TMeanVarAccumulator<float> mean_acc;
         for (auto bin : bins)
@@ -509,7 +509,7 @@ int main_segment(int argc, char** argv) {
             TMeanVarAccumulator<float> mean_acc;
             for (auto j = 0; j < bins.size(); ++j)
                 mean_acc((counts[i][j]).watson_count + (counts[i][j]).crick_count);
-            mean_per_sample[i] = boost::accumulators::mean(mean_acc);
+            mean_per_cell[i] = boost::accumulators::mean(mean_acc);
         }
     }
 
@@ -630,21 +630,23 @@ int main_segment(int argc, char** argv) {
 
 
         // Put both strands of each cell into data.
+        // Normalize each cell by its mean coverage first, by default,
+        // but this can be switched off.
         Matrix<double> data;
         for (unsigned i = 0; i < counts.size(); ++i)
         {
-            if (vm.count("normalize-cells")) {
-                double sample_mean = mean_per_sample[i];
+            if (!vm.count("do-not-normalize-cells")) {
+                double cell_mean = mean_per_cell[i];
                 std::vector<double> tmp(N);
                 std::transform(counts[i].begin() + chrom_map[chrom],
                                counts[i].begin() + chrom_map[chrom] + N,
                                tmp.begin(),
-                               [sample_mean](Counter<unsigned> const & c){return (double) c.watson_count / sample_mean;});
+                               [cell_mean](Counter<unsigned> const & c){return (double) c.watson_count / cell_mean;});
                 data.push_back(tmp);
                 std::transform(counts[i].begin() + chrom_map[chrom],
                                counts[i].begin() + chrom_map[chrom] + N,
                                tmp.begin(),
-                               [sample_mean](Counter<unsigned> const & c){return (double) c.crick_count / sample_mean;});
+                               [cell_mean](Counter<unsigned> const & c){return (double) c.crick_count / cell_mean;});
                 data.push_back(tmp);
             } else {
                 std::vector<double> tmp(N);
