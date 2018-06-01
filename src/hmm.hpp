@@ -31,8 +31,8 @@ namespace hmm {
          */
     public:
 
-        HMM(std::vector<std::string> const & names) :
-            state_labels(names), N(names.size())
+        explicit HMM(std::vector<std::string> const & names) :
+            N(names.size()), state_labels(names)
         {
             assert(N>0);
             assert(names.size() == N);

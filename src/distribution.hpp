@@ -13,6 +13,7 @@
 #include "utils.hpp"
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/negative_binomial.hpp>
+#include <boost/math/distributions/binomial.hpp>
 
 
 namespace hmm {
@@ -79,9 +80,10 @@ namespace hmm {
     public:
         uint8_t dim;
         std::vector<TDistribution> inner;
+        double log_prior;
 
-        MultiVariate(std::vector<TDistribution> const & distributions) :
-            dim(distributions.size()), inner(distributions)
+        MultiVariate(std::vector<TDistribution> const & distributions, double _prior = 1) :
+        inner(distributions), dim(distributions.size()), log_prior(log(_prior))
         {
             assert(distributions.size() > 0 && distributions.size() < 256);
             for (auto dist : distributions)
@@ -93,6 +95,7 @@ namespace hmm {
             double logp = 0;
             for (unsigned i=0; i<dim; ++i, ++iter)
                 logp += inner[i].calc_log_emission(iter);
+            logp += log_prior;
             if (logp < MIN_EMISSION_LOG)
                 logp = MIN_EMISSION_LOG;
             return logp;
@@ -115,6 +118,43 @@ namespace hmm {
     }
 
 
+
+
+    /**
+     *  CombinedNegBinAndBinomial
+     *  ----------------
+     *  Model total coverage (w+c) by Negative Binomial and fraction c/(w+c) by
+     *  a binomial distribution.
+     */
+    class CombinedNegBinAndBinomial
+    {
+    public:
+        typedef unsigned TEmission;
+        static const uint8_t dim = 2;
+        boost::math::negative_binomial nb;
+        double ratio;
+        double prior;
+
+        CombinedNegBinAndBinomial(double nb_p, double nb_r, double strand_ratio, double prior = 1) :
+        nb(nb_r,nb_p), ratio(strand_ratio), prior(prior)
+        {}
+
+        inline double calc_log_emission(std::vector<unsigned>::const_iterator iter) const
+        {
+            double pr = log(calc_emission(iter));
+            if (pr < MIN_EMISSION_LOG)
+                pr = MIN_EMISSION_LOG;
+            return pr;
+        }
+
+        inline double calc_emission(std::vector<unsigned>::const_iterator iter) const
+        {
+            unsigned c = *iter++;
+            unsigned w = *iter++;
+            boost::math::binomial_distribution<> binomial(c+w, ratio);
+            return prior * boost::math::pdf(nb, w+c) * boost::math::pdf(binomial, w);
+        }
+    };
 
 
     

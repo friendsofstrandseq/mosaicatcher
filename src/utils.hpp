@@ -168,4 +168,40 @@ inline bool get_RG_tag(std::string const & tag,
 }
 
 
+
+
+
+
+/**
+ * template <class InputIter, class ForwardIter, class BinaryPredicate, class BinaryFunction> ForwardIter reduce_adjacent(InputIter first, InputIter last,ForwardIter result, BinaryPredicate _bool_mergeable, BinaryFunction _merge_func)
+ * STL-style algorithm to merge/reduce adjacent elements (if they are mergeable) and return a shortened list
+ *
+ * @param first input iterator.
+ * @param end input iterator end.
+ * @param result output iterator. Can point to *first to do inplace operations.
+ * @param _bool_mergeable Function stating whether two consecutive elements are mergeable.
+ * @param _merge_func Funciton to merge to consecutive elements. Must return same type.
+ */
+template <class InputIter, class ForwardIter, class BinaryPredicate, class BinaryFunction>
+ForwardIter reduce_adjacent(InputIter first, InputIter last,
+                            ForwardIter result,
+                            BinaryPredicate _bool_mergeable,
+                            BinaryFunction _merge_func)
+{
+    if (first == last) return result; // skip empty container
+
+    auto elem = *first; // copy first element anyways.
+    while (++first != last) { // loop skippes first elem
+        if ( !_bool_mergeable(elem, *first) ) {
+            *(result++) = elem;
+            elem = *first;
+        } else {
+            elem = _merge_func(elem, *first);
+        }
+    }
+    *(result++) = elem;
+    return result;
+}
+
+
 #endif /* utils_hpp */

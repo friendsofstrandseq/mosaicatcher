@@ -4,24 +4,50 @@
 # file LICENSE.md or http://www.opensource.org/licenses/mit-license.php.
 
 
-library(data.table)
-library(assertthat)
-library(ggplot2)
-library(scales)
-library(cowplot)
+suppressMessages(library(data.table))
+suppressMessages(library(assertthat))
+suppressMessages(library(ggplot2))
+suppressMessages(library(scales))
+suppressMessages(library(cowplot))
+
+
+add_overview_plot = T
+
 
 args <- commandArgs(trailingOnly = T)
-if (length(args) < 2 | length(args) > 3 | !grepl('\\.pdf$', args[length(args)])) {
-    warning("Usage: Rscript R/qc.R input-file [cell-info-file] output-pdf")
+if (length(args) < 2 || length(args) > 4 || !grepl('\\.pdf$', args[length(args)]) || any(!file.exists(args[1:(length(args)-1)])))  {
+    warning("Usage: Rscript R/qc.R input-file [SCE-file] [cell-info-file] output-pdf")
     quit(status = 1)
 }
 f_in <- args[1]
 pdf_out <- args[length(args)]
-if(length(args)==3) f_info = args[2] else f_info = NULL
+
+# Detect info or SCE file.
+info <- NULL
+sces <- NULL
+is_sce_file <- function(x)  { all(c("sample","cell","chrom","start","end","state") %in% colnames(x)) }
+is_info_file <- function(x) { all(c("sample","cell","pass1","dupl","mapped","nb_p","nb_r","nb_a") %in% colnames(x)) }
+if (length(args)>2) {
+    x = fread(args[2])
+    if (is_sce_file(x)) { message("* Using SCE file ", args[2]); sces = x }
+    else if (is_info_file(x)) { message("* Using INFO file ", args[2]); info = x }
+    if (length(args)>3) {
+        x = fread(args[3])
+        if (is_sce_file(x)) { message("* Using SCE file ", args[3]); sces = x }
+        else if (is_info_file(x)) { message("* Using INFO file ", args[3]); info = x }
+    }
+}
+if (!is.null(sces)) {
+    sces[, chrom := sub('^chr','',chrom)]
+    sces[, chrom := factor(chrom, levels=as.character(c(1:22,'X','Y')), ordered = T)]
+}
+
+
 
 format_Mb <- function(x) {
     paste(comma(x/1e6), "Mb")
 }
+
 
 # if gzip
 zcat_command = "zcat"
@@ -32,14 +58,14 @@ if (substr(f_in,nchar(f_in)-2,nchar(f_in)) == ".gz")
 d = fread(f_in)
 
 # Check that correct files are given:
-assert_that("chrom" %in% colnames(d),
+invisible(assert_that("chrom" %in% colnames(d),
             "start" %in% colnames(d) && is.integer(d$start),
             "end" %in% colnames(d) && is.integer(d$end),
             "sample" %in% colnames(d),
             "cell" %in% colnames(d),
             "w" %in% colnames(d) && is.integer(d$w),
             "c" %in% colnames(d) && is.integer(d$c),
-            "class" %in% colnames(d))
+            "class" %in% colnames(d)))
 
 # Re-name and -order chromosomes - this is human-specific
 d = d[, chrom := sub('^chr','',chrom)][]
@@ -47,24 +73,9 @@ d = d[grepl('^([1-9]|[12][0-9]|X|Y)$', chrom),]
 d = d[, chrom := factor(chrom, levels=as.character(c(1:22,'X','Y')), ordered = T)]
 
 
-# Read cell info file for bells and whistles
-if (!is.null(f_info)) {
-    info = fread(f_info, skip=13)
-    assert_that(nrow(info)>0,
-                "sample" %in% colnames(info),
-                "cell" %in% colnames(info),
-                "pass1" %in% colnames(info),
-                "dupl" %in% colnames(info),
-                "mapped" %in% colnames(info),
-                "nb_p" %in% colnames(info) && is.numeric(info$nb_p),
-                "nb_r" %in% colnames(info) && is.numeric(info$nb_r),
-                "nb_a" %in% colnames(info) && is.numeric(info$nb_a))
-}
-
-add_overview_plot = T
-
 cairo_pdf(pdf_out, width=14, height=10, onefile = T)
-message("Writing plot ", pdf_out)
+message("* Writing plot ", pdf_out)
+
 if (add_overview_plot) {
 
     message("* Plotting an overview page")
@@ -79,7 +90,7 @@ if (add_overview_plot) {
     ov_binsizes <- ggplot(unique(d[, .(chrom,start,end)])) +
         geom_histogram(aes(end - start), bins = 50) +
         theme_minimal() +
-        scale_y_log10(breaks = c(1,10,100,1000,10e3)) +
+        scale_y_log10(breaks = c(1,10,100,1000,10e3,100e3,1e6)) +
         scale_x_log10(labels = comma) +
         ggtitle(paste0("Bin sizes (", n_bins, " bins, mean ", round(mean_bin/1000,1), " kb)")) +
         xlab("Bin size (bp)")
@@ -154,7 +165,8 @@ for (s in unique(d$sample))
         message(paste("* Plotting sample", s, "cell", ce))
 
         e = d[sample == s & cell == ce,]
-        
+
+
         # Calculate some information
         info_binwidth = median(e$end - e$start)
         info_reads_per_bin = median(e$w + e$c)
@@ -171,7 +183,7 @@ for (s in unique(d$sample))
         plt <- ggplot(e) +
             aes(x = (start+end)/2)
 
-    
+
         # prepare consecutive rectangles for a better plotting experience
         consecutive = cumsum(c(0,abs(diff(as.numeric(as.factor(e$class))))))
         e$consecutive = consecutive
@@ -180,6 +192,16 @@ for (s in unique(d$sample))
         plt <- plt +
             geom_rect(data = f, aes(xmin = start, xmax=end, ymin=-Inf, ymax=Inf, fill=class), inherit.aes=F, alpha=0.2) +
             scale_fill_manual(values = c(WW = "sandybrown", CC = "paleturquoise4", WC = "yellow", None = NA))
+
+        # Show SCEs
+        if (!is.null(sces)) {
+            sces_local = sces[sample == s & cell == ce][, .SD[.N>1], by = chrom]
+            if (nrow(sces_local)>0) {
+                sces_local <- sces_local[, .(pos = (end[1:(.N-1)] + start[2:(.N)])/2), by = chrom]
+                plt <- plt + geom_point(data = sces_local, aes(x = pos, y = -info_y_limit), size = 3, shape = 18)
+            }
+        }
+
 
         # Watson/Crick bars
         plt <- plt +
@@ -192,25 +214,25 @@ for (s in unique(d$sample))
             facet_grid(.~chrom, switch="x") +
             ylab("Watson | Crick") + xlab(NULL) +
             scale_x_continuous(breaks = pretty_breaks(12), labels = format_Mb) +
-            scale_y_continuous(breaks = pretty_breaks(3)) + 
+            scale_y_continuous(breaks = pretty_breaks(3)) +
             theme_classic() +
-            theme(panel.margin = unit(0, "lines"),
+            theme(panel.spacing = unit(0.2, "lines"),
                   axis.text.x = element_blank(),
                   axis.ticks.x = element_blank(),
-                  strip.background = element_rect(fill = NA, colour=NA)) + 
+                  strip.background = element_rect(fill = NA, colour=NA)) +
             guides(fill = FALSE) +
             # Dotted lines at median bin count
             geom_segment(data = info_chrom_sizes, aes(xend = xend, x=0, y=-info_reads_per_bin, yend=-info_reads_per_bin),
                          linetype="dotted", col="darkgrey", size=0.5) +
             geom_segment(data = info_chrom_sizes, aes(xend = xend, x=0, y=+info_reads_per_bin, yend=+info_reads_per_bin),
                          linetype="dotted", col="darkgrey", size=0.5) +
-			geom_segment(data = info_chrom_sizes, aes(xend = xend, x=0), y=0, yend=0, size=0.5)
-        
+            geom_segment(data = info_chrom_sizes, aes(xend = xend, x=0), y=0, yend=0, size=0.5)
+
         # Rename classes:
         labels = e[,.N,by = class][,label := paste0(class," (n=", N, ")")][]
-        
+
         e[, class := factor(class, levels = labels$class, labels = labels$label)]
-        
+
         # Histogram in upper right corner
         e.melt <- melt.data.table(e, c("chrom","start","end","class"), measure.vars = c("w","c"), variable.name = "strand", value.name = "coverage")
         plt_hist_xlim = 10+3*info_reads_per_bin
@@ -221,14 +243,13 @@ for (s in unique(d$sample))
             theme(text = element_text(size=10), axis.text = element_text(size=8)) +
             scale_fill_manual(values = c(w = "sandybrown", c = "paleturquoise4")) +
             guides(fill=FALSE,col=FALSE) + ylab("bin count") +
-            xlab("reads per bin") + facet_wrap(~class, nrow=1, scales = "free")
+            xlab("reads per bin") +
+            facet_wrap(~class, nrow=1, scales = "free")
 
-        if (!is.null(f_info)) {
+        if (!is.null(info)) {
             Ie = info[sample == s & cell == ce,]
-            if(nrow(Ie) < 1) {
-                message("  Cannot find additional info for ", s, " - ", ce)
-            } else if (Ie$pass1 != 1) {
-                #message("didn't pass QC: ", s, " - ", ce)
+            if(nrow(Ie) != 1 || Ie$pass1 != 1 || !all(c("WW","WC","CC") %in% unique(Ie$class))) {
+                message("  Problem finding additional info for ", s, " - ", ce)
             } else {
                 p = Ie$nb_p
                 r = Ie$nb_r
@@ -237,16 +258,16 @@ for (s in unique(d$sample))
                 scale_factors = e.melt[,.N, by = .(class,strand,coverage)][, .(scale = max(N)), by = class]
                 nb = data.table(x      = rep(x,6),
                                 strand = rep(c(rep("w",length(x)), rep("c",length(x))),3),
-                                class  = c(rep(labels[class=="WW",]$label, 2*length(x)), 
-                                           rep(labels[class=="WC",]$label ,2*length(x)), 
+                                class  = c(rep(labels[class=="WW",]$label, 2*length(x)),
+                                           rep(labels[class=="WC",]$label ,2*length(x)),
                                            rep(labels[class=="CC",]$label, 2*length(x))),
                                 scale  = c(rep(scale_factors[class == labels[class=="WW",]$label,]$scale, 2*length(x)),
                                            rep(scale_factors[class == labels[class=="WC",]$label,]$scale, 2*length(x)),
                                            rep(scale_factors[class == labels[class=="CC",]$label,]$scale, 2*length(x))),
                                 y      = c(dnbinom(x, a*r,     p),
                                            dnbinom(x, (1-a)*r, p),
-                                           dnbinom(x, r,       p),
-                                           dnbinom(x, r,       p),
+                                           dnbinom(x, r/2,     p),
+                                           dnbinom(x, r/2,     p),
                                            dnbinom(x, (1-a)*r, p),
                                            dnbinom(x, a*r,     p)  ))
                 plt_hist <- plt_hist + geom_line(data = nb, aes(x,y*scale,col=strand))
@@ -269,9 +290,8 @@ for (s in unique(d$sample))
                                                            x=.29, y=.85, vjust=1, hjust=0, size=10) +
             draw_label(paste0("Plot limits: [-", info_y_limit, ",", info_y_limit, "]"),
                                                            x=.29, y=.83, vjust=1, hjust=0, size=10)
-        
         # If available, add additional info like duplicate rate and NB params!
-        if (!is.null(f_info)) {
+        if (!is.null(info)) {
             Ie = info[sample == s & cell == ce,]
             if(nrow(Ie) == 1) {
                 all <- all +
@@ -279,10 +299,18 @@ for (s in unique(d$sample))
                                x=.29,  y=.80, vjust=1, hjust=0, size=10)
                 if (Ie$pass1 == 1) {
                     all <- all +
-                        draw_label(paste0("NB parameters (p,r,a): ", round(Ie$nb_p,2), ",",  round(Ie$nb_r,2), ",", round(Ie$nb_a,2)),    
+                        draw_label(paste0("NB parameters (p,r,a): ", round(Ie$nb_p,2), ",",  round(Ie$nb_r,2), ",", round(Ie$nb_a,2)),
                                    x=.29,  y=.78, vjust=1, hjust=0, size=10)
                 }
             }
+        }
+
+        # If available, write number of SCEs detected
+        if (!is.null(sces)) {
+            sces_local = sces[sample == s & cell == ce][, .SD[.N>1], by = chrom]
+            if (nrow(sces_local)>0) sces_local <- sces_local[, .(pos = (end[1:(.N-1)] + start[2:(.N)])/2), by = chrom]
+            all <- all + draw_label(paste("SCEs detected:", nrow(sces_local)),
+                                    x=.29,  y=.76, vjust=1, hjust=0, size=10)
         }
 
         print(all)

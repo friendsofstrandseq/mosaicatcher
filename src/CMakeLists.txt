@@ -60,7 +60,7 @@ execute_process(
 
 # 1. Set Mosaicatcher version
 set (MOSAIC_VERSION_MAJOR 0)
-set (MOSAIC_VERSION_MINOR 1)
+set (MOSAIC_VERSION_MINOR 3)
 
 # 2. Boost version from find_package (Boost_VERSION)
 
