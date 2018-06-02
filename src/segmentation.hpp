@@ -28,7 +28,7 @@
 
 
 using interval::Interval;
-using count::TGenomeCounts;
+typedef std::vector<Counter<double>> TGenomeCountDouble;
 using count::Counter;
 
 /**
@@ -429,7 +429,7 @@ int main_segment(int argc, char** argv) {
     /////////////////////////////////////////////////////////// global variables
     /* counts/cells */
     std::vector<std::pair<std::string,std::string>> sample_cell_names;
-    std::vector<TGenomeCounts> counts;
+    std::vector<TGenomeCountDouble> counts;
 
     /* bins */
     std::vector<std::string> chromosomes;
@@ -641,24 +641,24 @@ int main_segment(int argc, char** argv) {
                 std::transform(counts[i].begin() + chrom_map[chrom],
                                counts[i].begin() + chrom_map[chrom] + N,
                                tmp.begin(),
-                               [cell_mean](Counter<unsigned> const & c){return (double) c.watson_count / cell_mean;});
+                               [cell_mean](Counter<double> const & c){return (double) c.watson_count / cell_mean;});
                 data.push_back(tmp);
                 std::transform(counts[i].begin() + chrom_map[chrom],
                                counts[i].begin() + chrom_map[chrom] + N,
                                tmp.begin(),
-                               [cell_mean](Counter<unsigned> const & c){return (double) c.crick_count / cell_mean;});
+                               [cell_mean](Counter<double> const & c){return (double) c.crick_count / cell_mean;});
                 data.push_back(tmp);
             } else {
                 std::vector<double> tmp(N);
                 std::transform(counts[i].begin() + chrom_map[chrom],
                                counts[i].begin() + chrom_map[chrom] + N,
                                tmp.begin(),
-                               [](Counter<unsigned> const & c){return (double) c.watson_count;});
+                               [](Counter<double> const & c){return (double) c.watson_count;});
                 data.push_back(tmp);
                 std::transform(counts[i].begin() + chrom_map[chrom],
                                counts[i].begin() + chrom_map[chrom] + N,
                                tmp.begin(),
-                               [](Counter<unsigned> const & c){return (double) c.crick_count;});
+                               [](Counter<double> const & c){return (double) c.crick_count;});
                 data.push_back(tmp);
             }
         }
