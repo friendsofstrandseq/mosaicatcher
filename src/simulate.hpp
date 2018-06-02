@@ -13,6 +13,7 @@
 #include <random>
 #include <utility>
 #include <chrono>
+#include <unordered_map>
 
 //#include <boost/math/distributions/negative_binomial.hpp>
 #include <boost/multiprecision/random.hpp>

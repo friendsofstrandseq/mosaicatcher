@@ -8,6 +8,7 @@
 #define counter_hpp
 
 #include <algorithm>
+#include <unordered_map>
 
 #include <htslib/sam.h>
 #include "utils.hpp"
