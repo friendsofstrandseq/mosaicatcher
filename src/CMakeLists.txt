@@ -1,6 +1,7 @@
 cmake_minimum_required (VERSION 3.1)
 set(CMAKE_CXX_STANDARD 11)
 project (Mosaicatcher CXX)
+enable_testing()
 
 
 include(ExternalProject)
@@ -119,3 +120,15 @@ if(DOXYGEN_FOUND)
 else()
     message("Need Doxygen to produce API documentation. This is skipped.")
 endif(DOXYGEN_FOUND)
+
+
+
+### Tests
+
+add_executable(test_segmentation tests/segmentation.cpp ${HEADER_FILES})
+target_include_directories(test_segmentation PRIVATE ${Boost_INCLUDE_DIRS})
+target_link_libraries (test_segmentation LINK_PUBLIC ${Boost_LIBRARIES})
+target_link_libraries (test_segmentation LINK_PUBLIC hts)
+add_dependencies (test_segmentation htslib)
+
+add_test(NAME test_segmentation COMMAND test_segmentation)
