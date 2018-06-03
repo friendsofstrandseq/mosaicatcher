@@ -379,7 +379,7 @@ int main_segment(int argc, char** argv) {
     ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(100000000), "maximum segment length")
     ("penalize-none", boost::program_options::value<float>(&conf.none_penalty)->implicit_value(100), "Penalize segments through removed bins (which are marked by 'None' in the counts table).")
     ("remove-none", "Remove segments through removed bins before segmentation. Mutually exclusive with --penalize-none.")
-    ("do-not-normalize-cells", "Instead of using raw counts for each strand, normalize them per cell. This way all cells contribute equally.")
+    ("do-not-normalize-cells", "Instead of using cell-normalized counts for each strand, use the raw numbers.")
     ("do-not-remove-bad-cells", "Keep all cells (by default, cells which are marked 'None' in all bins get removed")
     ;
 
@@ -506,10 +506,20 @@ int main_segment(int argc, char** argv) {
         window_size = (unsigned) boost::accumulators::mean(mean_acc);
 
         for (unsigned i=0; i<counts.size(); ++i) {
+
+            // Calculate mean without using 'None' bins
             TMeanVarAccumulator<float> mean_acc;
             for (auto j = 0; j < bins.size(); ++j)
-                mean_acc((counts[i][j]).watson_count + (counts[i][j]).crick_count);
-            mean_per_cell[i] = boost::accumulators::mean(mean_acc);
+                if (counts[i][j].label != "None")
+                    mean_acc((counts[i][j]).watson_count + (counts[i][j]).crick_count);
+
+            // if there was at least one value write down the mean, otherwise set it to 1.0
+            if (boost::accumulators::count(mean_acc)==0) {
+                std::cerr << "[Warning] Calculating mean of cell with only black-listed bins" << std::endl;
+                mean_per_cell[i] = 1.0;
+            } else {
+                mean_per_cell[i] = boost::accumulators::mean(mean_acc);
+            }
         }
     }
 
@@ -649,6 +659,7 @@ int main_segment(int argc, char** argv) {
                                [cell_mean](Counter<double> const & c){return (double) c.crick_count / cell_mean;});
                 data.push_back(tmp);
             } else {
+                std::cout << "[Info] Normalize cells by mean counts (excl. None regions)" << std::endl;
                 std::vector<double> tmp(N);
                 std::transform(counts[i].begin() + chrom_map[chrom],
                                counts[i].begin() + chrom_map[chrom] + N,
