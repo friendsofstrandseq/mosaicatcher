@@ -375,7 +375,7 @@ int main_segment(int argc, char** argv) {
 
     boost::program_options::options_description po_segmentation("Segmentation options");
     po_segmentation.add_options()
-    ("max_bp,m", boost::program_options::value<float>(&conf.max_bp_per_Mb)->default_value(0.5), "maximum number of breakpoints per Mb")
+    ("max_bp,m", boost::program_options::value<float>(&conf.max_bp_per_Mb)->default_value(0.333), "maximum number of breakpoints per Mb")
     ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(100000000), "maximum segment length")
     ("penalize-none", boost::program_options::value<float>(&conf.none_penalty)->implicit_value(100), "Penalize segments through removed bins (which are marked by 'None' in the counts table).")
     ("remove-none", "Remove segments through removed bins before segmentation. Mutually exclusive with --penalize-none.")
@@ -646,6 +646,7 @@ int main_segment(int argc, char** argv) {
         for (unsigned i = 0; i < counts.size(); ++i)
         {
             if (!vm.count("do-not-normalize-cells")) {
+                if (i==0) std::cout << "[Info] Normalize cells by mean counts (excl. None regions)" << std::endl;
                 double cell_mean = mean_per_cell[i];
                 std::vector<double> tmp(N);
                 std::transform(counts[i].begin() + chrom_map[chrom],
@@ -659,7 +660,6 @@ int main_segment(int argc, char** argv) {
                                [cell_mean](Counter<double> const & c){return (double) c.crick_count / cell_mean;});
                 data.push_back(tmp);
             } else {
-                std::cout << "[Info] Normalize cells by mean counts (excl. None regions)" << std::endl;
                 std::vector<double> tmp(N);
                 std::transform(counts[i].begin() + chrom_map[chrom],
                                counts[i].begin() + chrom_map[chrom] + N,
