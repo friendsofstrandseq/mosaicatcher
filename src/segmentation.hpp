@@ -28,7 +28,7 @@
 
 
 using interval::Interval;
-typedef std::vector<Counter<double>> TGenomeCountDouble;
+typedef std::vector<count::Counter<double>> TGenomeCountDouble;
 using count::Counter;
 
 /**
