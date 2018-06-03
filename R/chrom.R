@@ -25,27 +25,33 @@ manual_colors = c(
   dup_hom         = muted("firebrick4", 70, 50),
   simul_het_dup   = "firebrick2",
   dup_h1          = muted("firebrick2", 90, 30),
-  dup_h2          = muted("firebrick2", 90, 30),
+  dup_h2          = muted("firebrick2", 80, 20),
     # deletions
   simul_hom_del   = "dodgerblue4",
   del_hom         = muted("dodgerblue4", 50, 60),
   simul_het_del   = "dodgerblue2",
   del_h1          = muted("dodgerblue2", 80, 50),
-  del_h2          = muted("dodgerblue2", 80, 50),
+  del_h2          = muted("deepskyblue2", 80, 50),
     # inversions
   simul_hom_inv   = "chartreuse4",
   inv_hom         = muted("chartreuse4", 80, 50),
   simul_het_inv   = "chartreuse2",
   inv_h1          = muted("chartreuse2", 100, 60),
-  inv_h2          = muted("chartreuse2", 100, 60),
+  inv_h2          = muted("darkolivegreen3", 100, 60),
     # other SVs
   simul_false_del = "darkgrey",
   simul_inv_dup   = "darkgoldenrod2",
   idup_h1         = muted("darkgoldenrod2", 80, 70),
-  idup_h2         = muted("darkgoldenrod2", 80, 70),
+  idup_h2         = muted("gold", 80, 70),
+  complex         = "darkorchid1",
     # background
   bg1 = "#ffffff",
-  bg2 = "khaki2")
+  bg2 = "#dddddd",
+    # Strand states
+  `State: WW` = "sandybrown",
+  `State: CC` = "paleturquoise4",
+  `State: WC` = "khaki",
+  `State: CW` = "yellow2")
 
 
 
@@ -67,6 +73,7 @@ print_usage_and_stop = function(msg = NULL) {
   message("    segments=<file>       Show the segmentation in the plots                    ")
   message("    calls=<file>          Highlight SV calls provided in a table                ")
   message("    truth=<file>          Mark the `true`` SVs provided in a table              ")
+  message("    strand=<file>         Mark the strand states which calls are based on       ")
   message("                                                                                ")
   message("Generates one plot per chromosome listing all cells below another, separated    ")
   message("into pages. If an SV probability file is provided (2), segments are colored     ")
@@ -104,10 +111,11 @@ f_out    = args[length(args)]
 f_segments = NULL
 f_calls    = NULL
 f_truth    = NULL
+f_strand   = NULL
 cells_per_page <- 8
 
 if (length(args)>3) {
-  if (!all(grepl("^(calls|segments|per-page|truth)=", args[1:(length(args)-3)]))) {
+  if (!all(grepl("^(strand|calls|segments|per-page|truth)=", args[1:(length(args)-3)]))) {
     print_usage_and_stop("[Error]: Options must be one of `calls`, `segments`, `per-page`, or `truth`") }
   for (op in args[1:(length(args)-3)]) {
     if (grepl("^segments=", op)) f_segments = str_sub(op, 10)
@@ -117,6 +125,7 @@ if (length(args)>3) {
       pp = as.integer(str_sub(op, 10)); 
       if (pp>0 && pp < 50) { cells_per_page = pp }
     } 
+    if (grepl("^strand=", op))   f_strand = str_sub(op, 8)
   }
 }
 
@@ -157,7 +166,10 @@ if (!is.null(f_calls)) {
               "end"      %in% colnames(svs),
               "sample"   %in% colnames(svs),
               "cell"     %in% colnames(svs),
-              "SV_class" %in% colnames(svs)) %>% invisible
+              ("SV_class" %in% colnames(svs) | "sv_call_name" %in% colnames(svs) )) %>% invisible
+  if(!("SV_class" %in% colnames(svs))) {
+    svs[, SV_class := sv_call_name]
+  }
   assert_that(all(svs$SV_class %in% names(manual_colors))) %>% invisible
   svs[, sample_cell := paste(sample, "-", cell)]
   assert_that(all(unique(svs$sample_cell) %in% unique(counts$sample_cell))) %>% invisible
@@ -199,6 +211,21 @@ if (!is.null(f_truth)) {
   simul = simul[chrom == CHROM]
 }
 
+### Check strand states file
+if (!is.null(f_strand)) {
+  message(" * Reading strand state file from ", f_strand, "...")
+  strand = fread(f_strand)
+  assert_that("sample"  %in% colnames(strand),
+              "cell"    %in% colnames(strand),
+              "chrom"   %in% colnames(strand),
+              "start"   %in% colnames(strand),
+              "end"     %in% colnames(strand),
+              "class"   %in% colnames(strand))
+  strand[, class := paste("State:", class)]
+  strand[, sample_cell := paste(sample, "-", cell)]
+  assert_that(all(unique(strand$sample_cell) %in% unique(counts$sample_cell))) %>% invisible
+  strand = strand[chrom == CHROM]
+}
 
 
 
@@ -248,7 +275,7 @@ while (i <= n_cells) {
                     aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf, fill = SV_class))
       }
     }
-    
+
     # Add bars for true SVs, if available
     if (!is.null(f_truth)) {
       local_sim = simul[CELLS, on = .(sample_cell), nomatch = 0]
@@ -256,6 +283,16 @@ while (i <= n_cells) {
         plt <- plt +
           geom_rect(data = local_sim,
                     aes(xmin = start, xmax = end, ymin = y_lim, ymax = Inf, fill = SV_class))
+      }
+    }
+    
+    # Add bars for strand states, if available
+    if (!is.null(f_strand)) {
+      local_strand = strand[CELLS, on = .(sample_cell), nomatch = 0]
+      if (nrow(local_strand) > 0) {
+        plt <- plt +
+          geom_rect(data = local_strand,
+                    aes(xmin = start, xmax = end, ymin = -Inf, ymax = -y_lim, fill = class))
       }
     }
 
