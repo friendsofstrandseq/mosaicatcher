@@ -24,14 +24,15 @@ using interval::Interval;
 /**
  * @ingroup count
  */
+template <typename TInner>
 struct Counter {
     //static const std::vector<std::string> label_names;
     //static const std::map<std::string, uint8_t> label_id;
-    unsigned int watson_count, crick_count;
+    TInner watson_count, crick_count;
     std::string label;
     unsigned n_supplementary;
 
-    Counter() : watson_count(0), crick_count(0), label("None"), n_supplementary(0)
+    Counter() : watson_count(static_cast<TInner>(0)), crick_count(static_cast<TInner>(0)), label("None"), n_supplementary(0)
     {}
 
     bool set_label(std::string const & s) {
@@ -47,7 +48,7 @@ struct Counter {
 /**
  * @ingroup count
  */
-typedef std::vector<Counter> TGenomeCounts;
+typedef std::vector<Counter<unsigned>> TGenomeCounts;
 
 
 /**
@@ -93,7 +94,7 @@ void set_median_per_cell(std::vector<TGenomeCounts> const & counts,
 
     for (unsigned i = 0; i < counts.size(); ++i) {
         TMedianAccumulator<unsigned int> med_acc;
-        for (Counter const & count_bin : counts[i])
+        for (Counter<unsigned> const & count_bin : counts[i])
             med_acc(count_bin.watson_count + count_bin.crick_count);
         cells[i].median_bin_count = boost::accumulators::median(med_acc);
     }
@@ -212,7 +213,7 @@ bool count_sorted_reads(std::string const & filename,
         return false;
     }
 
-    counts.resize(bins.size(), Counter());
+    counts.resize(bins.size(), Counter<unsigned>());
 
     // access samfile chrom per chrom
     for (int32_t chrom = 0; chrom < hdr->n_targets; ++chrom) {
@@ -291,6 +292,9 @@ bool count_sorted_reads(std::string const & filename,
  * The values in `SampleInfo.means` and `SampleInfo.vars` will later be used 
  * to estimate the *p* parameter of the negative binomial.
  *
+ * There is a version requiring `good_cells` and a version without (using all
+ * cells)
+ *
  * @param samples Map of cell name to sampleInfo --> variables `means` and 
  *        `vars` are updated.
  * @param cells List of `CellInfos`, which must have `sample_name` set. Also 
@@ -327,7 +331,32 @@ bool calculate_new_cell_mean(std::unordered_map<std::string, SampleInfo> & sampl
     }
     return true;
 }
+bool calculate_new_cell_mean(std::unordered_map<std::string, SampleInfo> & samples,
+                             std::vector<CellInfo> & cells,
+                             std::vector<TGenomeCounts> const & counts,
+                             std::vector<unsigned> const & good_bins)
+{
+    // calculate cell means and cell variances, grouped by sample (not cell)
+    for (unsigned i = 0; i < counts.size(); ++i) {
 
+        // Get mean and var for this cell, but only from good bins!
+        TMeanVarAccumulator<float> acc;
+        for (unsigned bini = 0; bini < good_bins.size(); ++bini) {
+            acc(counts[i][good_bins[bini]].crick_count + counts[i][good_bins[bini]].watson_count);
+        }
+        // emplace finds key if existing and returns (it,false);
+        // otherwise it inserts (key,value) and returns (it,true).
+        auto it = samples.begin();
+        std::tie(it, std::ignore) = samples.emplace(cells[i].sample_name, SampleInfo());
+        float cell_mean = boost::accumulators::mean(acc);
+        float cell_var  = boost::accumulators::variance(acc);
+
+        cells[i].mean_bin_count = cell_mean;
+        (it->second).means.push_back(cell_mean);
+        (it->second).vars.push_back(cell_var);
+    }
+    return true;
+}
 
 
 
