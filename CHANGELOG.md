@@ -3,6 +3,9 @@
 ## Version 0.3
 
  * New features for segmentation: penalize or ignore `None` bins
+ * Segmentation accepts non-integer (i.e. normalize) count tables
+ * `R/norm.R` can scale and black-list a count table
+ * `R/chrom.R` highlights `None` regions 
 
 ## Version 0.2
 
