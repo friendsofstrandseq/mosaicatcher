@@ -4,9 +4,6 @@ library(assertthat)
 
 
 args = commandArgs(trailingOnly = T)
-# args = c("../20180420_rpe_data_test/rpe_mosaiClassifier_20180529/counts/BM150_data/50000_fixed.txt.gz", 
-#          "normalization/norm.50kb.txt",
-#          "BM150.50000_fixed.norm.txt.gz")
 if (length(args)!=3) {
   print("Usage: Rscript scale.R <count table> <norm factors> <out>")
   print("")
@@ -41,14 +38,14 @@ counts[,
 
 # remove bad cells
 bad_cells <- counts[class == "None", .N, by = .(sample, cell)][N == nrow(bins)]
-if (nrow(bad_cells)>0) {
-  message(" * Removing ", nrow(bad_cells), " cells because thery were black-listed.")
-  counts <- counts[!bad_cells, on = c("sample","cell")]
-}
+# if (nrow(bad_cells)>0) {
+#   message(" * Removing ", nrow(bad_cells), " cells because thery were black-listed.")
+#   counts <- counts[!bad_cells, on = c("sample","cell")]
+# }
 
 # Check that the "None" bins are all the same across cells
-none_bins <- unique(counts[class == "None", .(chrom, start, end)])
-counts[class == "None", 
+none_bins <- unique(counts[!bad_cells, on = c("sample","cell")][class == "None", .(chrom, start, end)])
+counts[!bad_cells, on = c("sample","cell")][class == "None",
        assert_that(all(.SD == none_bins)),
        by = .(sample, cell),
        .SDcols = c("chrom", "start", "end")] %>% invisible
@@ -82,9 +79,9 @@ counts <- merge(counts,
                 all.x = T)
 
 if (any(is.na(counts$scalar))) {
-  message(" * Apply normalization: Could not match ", 
+  message(" * Assign scalars: Could not match ",
           unique(counts[,.(chrom, start, end, scalar)])[is.na(scalar), .N],
-          " bins (out of ", 
+          " bins (out of ",
           unique(counts[,.(chrom, start, end)])[,.N],
           ")")
 }
@@ -98,14 +95,25 @@ test <- test[, .(count_None = sum(class      == "None"),
          norm_None  = sum(norm_class == "None"),
          final_None = sum(class == "None" | norm_class == "None"))]
 message(" * ", test$count_None, " bins were already black-listed; ", test$norm_None, " are blacklisted via the normalization, leading to a total of ", test$final_None)
-
-
-# Apply black-list and normalization factor
 counts[norm_class == "None", class := "None"]
+
+
+# Apply normalization factor
 counts[, `:=`(c = as.numeric(c), w = as.numeric(w))]
-counts[norm_class != "None", `:=`(c = c/scalar, w = w/scalar)]
+counts[class != "None", `:=`(c = c/scalar, w = w/scalar)]
+message(" * Applying normalization: min = ",
+        round(min(counts[class!="None", scalar]),3),
+        ", max = ",
+        round(max(counts[class!="None", scalar]), 3),
+        ", median = ",
+        median(unique(counts[,.(chrom,start,end,class,scalar)][class!="None", scalar])))
 
 
+# Remove column
+counts[, norm_class := NULL]
+
+
+# Write down table
 message(" * Write data to ", args[3])
 gz1 <- gzfile(args[3], "w")
 write.table(counts, gz1, sep = "\t", quote = F, col.names = T, row.names =F)
