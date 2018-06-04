@@ -74,6 +74,7 @@ print_usage_and_stop = function(msg = NULL) {
   message("    calls=<file>          Highlight SV calls provided in a table                ")
   message("    truth=<file>          Mark the `true`` SVs provided in a table              ")
   message("    strand=<file>         Mark the strand states which calls are based on       ")
+  message("    no-none               Do not hightlight black-listed (i.e. None) bins       ")
   message("                                                                                ")
   message("Generates one plot per chromosome listing all cells below another, separated    ")
   message("into pages. If an SV probability file is provided (2), segments are colored     ")
@@ -112,10 +113,11 @@ f_segments = NULL
 f_calls    = NULL
 f_truth    = NULL
 f_strand   = NULL
-cells_per_page <- 8
+cells_per_page = 8
+show_none  = T
 
 if (length(args)>3) {
-  if (!all(grepl("^(strand|calls|segments|per-page|truth)=", args[1:(length(args)-3)]))) {
+  if (!all(grepl("^(strand|calls|segments|per-page|truth|no-none)=?", args[1:(length(args)-3)]))) {
     print_usage_and_stop("[Error]: Options must be one of `calls`, `segments`, `per-page`, or `truth`") }
   for (op in args[1:(length(args)-3)]) {
     if (grepl("^segments=", op)) f_segments = str_sub(op, 10)
@@ -126,6 +128,7 @@ if (length(args)>3) {
       if (pp>0 && pp < 50) { cells_per_page = pp }
     } 
     if (grepl("^strand=", op))   f_strand = str_sub(op, 8)
+    if (grepl("^no-none$", op)) show_none = F
   }
 }
 
@@ -275,6 +278,15 @@ while (i <= n_cells) {
                     aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf, fill = SV_class))
       }
     }
+    
+    # Highlight None bins, if requested
+    none_bins <- local_counts[class == "None"]
+    
+    if (show_none == T && nrow(none_bins)>0) {
+      plt <- plt +
+        geom_segment(data = none_bins, aes(x=start, xend=end, y=0, yend=0), col = "black", size = 2)
+    }
+    
 
     # Add bars for true SVs, if available
     if (!is.null(f_truth)) {
