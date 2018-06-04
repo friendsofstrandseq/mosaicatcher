@@ -15,7 +15,7 @@ endif("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
 
 
 ### Link Boost
-find_package(Boost 1.50 COMPONENTS system date_time filesystem iostreams program_options REQUIRED)
+find_package(Boost 1.59 COMPONENTS system date_time filesystem iostreams program_options REQUIRED)
 include_directories (${Boost_INCLUDE_DIR})
 
 
