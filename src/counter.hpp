@@ -114,7 +114,8 @@ void set_median_per_cell(std::vector<TGenomeCounts> const & counts,
 std::vector<unsigned> get_good_bins(std::vector<TGenomeCounts> const & counts,
                                     std::vector<CellInfo> const & cells,
                                     std::vector<unsigned> const & good_cells,
-                                    bool verbose = 0)
+                                    bool verbose = 0,
+                                    bool filter_by_WC = true)
 {
     if (counts.size() < 1) return {};
 
@@ -132,12 +133,31 @@ std::vector<unsigned> get_good_bins(std::vector<TGenomeCounts> const & counts,
     // mean + variance per bin
     std::vector<float> bin_means(N);
     std::vector<float> bin_variances(N);
+    std::vector<float> bin_WC_fraction(N, 0.0);
+
+    if (good_cells.size() < 12) {
+        std::cerr << "[Warning] Too few cells, I will not filter bins by WC/CC/WW states." << std::endl;
+        filter_by_WC = false;
+    }
+
     for (unsigned bin = 0; bin < N; ++bin) {
         TMeanVarAccumulator<float> meanvar_acc;
         for (auto i = good_cells.begin(); i != good_cells.end(); ++i)
             meanvar_acc(std::get<0>(norm_counts[*i][bin]) + std::get<1>(norm_counts[*i][bin]));
         bin_means[bin]     = boost::accumulators::mean(meanvar_acc);
         bin_variances[bin] = boost::accumulators::variance(meanvar_acc);
+
+        // check how many cells show a WC sginal in this bin
+        // TODO: this is currently based on fixed cut-offs!
+        if (filter_by_WC) {
+            for (auto i = good_cells.begin(); i != good_cells.end(); ++i) {
+                float bin_WC_frac = std::get<0>(norm_counts[*i][bin]) / (std::get<0>(norm_counts[*i][bin]) + std::get<1>(norm_counts[*i][bin]));
+                if (bin_WC_frac > 0.15 & bin_WC_frac < 0.85) {
+                    bin_WC_fraction[bin] += 1;
+                }
+            }
+            bin_WC_fraction[bin] /= (float)good_cells.size();
+        }
     }
 
     // finding good bins
@@ -154,19 +174,40 @@ std::vector<unsigned> get_good_bins(std::vector<TGenomeCounts> const & counts,
     for (unsigned bin = 0; bin < N; ++bin)
     {
         if (bin_means[bin] < std::max(0.05f, mean_mean - 4 * mean_sd)) {
-            reasons[bin] = 'l';
+            reasons[bin] = 'l'; // mean too low
         } else if (bin_means[bin] > mean_mean + 4 * mean_sd) {
-            reasons[bin] = 'h';
+            reasons[bin] = 'h'; // mean too high
+        } else if (filter_by_WC && bin_WC_fraction[bin] < 0.05) {
+            reasons[bin] = 'w'; // never WC
+        } else if (filter_by_WC && bin_WC_fraction[bin] > 0.95) {
+            reasons[bin] = 'c'; // always WC
         } else {
             reasons[bin] = '_';
             good_bins.push_back(bin);
         }
     }
-    //std::cout << std::string(reasons.begin(), reasons.end()) << std::endl;
+
+    if (verbose) {
+        std::cout << "[Info] Reasons for filtered bins (each character is one bin):" << std::endl;
+        std::cout << "[...]    l = low coverage across all cells" << std::endl;
+        std::cout << "[...]    h = high coverage across all cells" << std::endl;
+        std::cout << "[...]    c = always WC across cells" << std::endl;
+        std::cout << "[...]    w = never WC across cells";
+        unsigned x = 0;
+        while(x < reasons.size()) {
+            if (x % 80 == 0) std::cout << std::endl << "[...] ";
+            std::cout << reasons[x++];
+        }
+        std::cout << std::endl;
+    }
     return good_bins;
 }
+
+
 std::vector<unsigned> get_good_bins(std::vector<TGenomeCounts> const & counts,
-                                    std::vector<CellInfo> const & cells)
+                                    std::vector<CellInfo> const & cells,
+                                    bool verbose = 0,
+                                    bool filter_by_WC = true)
 {
     // When no good_cells where supplied, use all cells
     std::vector<unsigned> good_cells(counts.size());
