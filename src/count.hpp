@@ -125,6 +125,7 @@ int main_count(int argc, char **argv)
     ("bins,b", boost::program_options::value<boost::filesystem::path>(&conf.f_bins), "BED file with manual bins (disables -w). See also 'makebins'")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&conf.f_excl), "Exclude chromosomes and regions")
     ("info,i", boost::program_options::value<boost::filesystem::path>(&conf.f_info), "Write info about samples")
+    ("do-not-filter-by-WC", "When black-listing bins, only consider coverage and not WC/WW/CC states")
     ;
 
     boost::program_options::options_description hidden("Hidden options");
@@ -243,7 +244,7 @@ int main_count(int argc, char **argv)
         for (Interval const & b : bins)
             med_acc(b.end - b.start);
         median_binsize = boost::accumulators::median(med_acc);
-        if (vm.count("verbose")) std::cout << "[Info] Reading " << bins.size() << " variable-width bins with median bin size of " << round(median_binsize/1000) << "kb" << std::endl;
+        std::cout << "[Info] Reading " << bins.size() << " variable-width bins with median bin size of " << round(median_binsize/1000) << "kb" << std::endl;
     }
     else
     {
@@ -252,7 +253,7 @@ int main_count(int argc, char **argv)
             read_exclude_file(conf.f_excl.string(), hdr, exclude, vm.count("verbose"));
             sort(exclude.begin(), exclude.end(), interval::invt_less);
         }
-        if (vm.count("verbose")) std::cout << "[Info] Creating " << round(conf.window/1000) << "kb bins with " << exclude.size() << " excluded regions" << std::endl;
+        std::cout << "[Info] Creating " << round(conf.window/1000) << "kb bins with " << exclude.size() << " excluded regions" << std::endl;
         create_fixed_bins(bins,
                           chrom_map,
                           conf.window,
@@ -267,7 +268,7 @@ int main_count(int argc, char **argv)
 
     // Count in bins. If A bam file cannot be read, the cell is ignored and
     //     the respective entry in `counts` and `cells` will be erased.
-    if (vm.count("verbose")) std::cout << "[Info] Reading " << conf.f_in.size() <<  " BAM files...";
+    std::cout << "[Info] Reading " << conf.f_in.size() <<  " BAM files...";
     boost::progress_display show_progress1(conf.f_in.size());
     for (unsigned i = 0, i_f = 0; i_f < conf.f_in.size(); ++i, ++i_f)
     {
@@ -308,8 +309,12 @@ int main_count(int argc, char **argv)
         good_bins.resize(bins.size());
         std::iota(good_bins.begin(), good_bins.end(), 0); // fill with 0,1,2,...
     } else {
-        good_bins = count::get_good_bins(counts, cells, good_cells);
-        if (vm.count("verbose")) std::cout << "[Info] Filtered out " << bins.size() - good_bins.size() << " bad bins" << std::endl;
+        good_bins = count::get_good_bins(counts,
+                                         cells,
+                                         good_cells,
+                                         vm.count("verbose"),
+                                         !vm.count("do-not-filter-by-WC"));
+        if (vm.count("verbose")) std::cout << "[Info] Filtered out " << bins.size() - good_bins.size() << " bad bins from " << bins.size() << std::endl;
     }
 
     // build chrom_map for good bins
