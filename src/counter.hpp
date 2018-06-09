@@ -175,8 +175,8 @@ std::vector<unsigned> get_good_bins(std::vector<TGenomeCounts> const & counts,
     {
         if (bin_means[bin] < std::max(0.05f, mean_mean - 4 * mean_sd)) {
             reasons[bin] = 'l'; // mean too low
-        } else if (bin_means[bin] > mean_mean + 4 * mean_sd) {
-            reasons[bin] = 'h'; // mean too high
+        // } else if (bin_means[bin] > mean_mean + 4 * mean_sd) {
+        //     reasons[bin] = 'h'; // mean too high
         } else if (filter_by_WC && bin_WC_fraction[bin] < 0.05) {
             reasons[bin] = 'w'; // never WC
         } else if (filter_by_WC && bin_WC_fraction[bin] > 0.95) {
