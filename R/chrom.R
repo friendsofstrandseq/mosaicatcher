@@ -19,7 +19,7 @@ zcat_command = "zcat"
 format_Mb   <- function(x) {paste(comma(x/1e6), "Mb")}
 
 ### Colors for background
-manual_colors = c(  
+manual_colors = c(
     # duplications
   simul_hom_dup   = "firebrick4",
   dup_hom         = muted("firebrick4", 70, 50),
@@ -124,9 +124,9 @@ if (length(args)>3) {
     if (grepl("^calls=", op))    f_calls = str_sub(op, 7)
     if (grepl("^truth=", op))    f_truth = str_sub(op, 7)
     if (grepl("^per-page=", op)) {
-      pp = as.integer(str_sub(op, 10)); 
+      pp = as.integer(str_sub(op, 10));
       if (pp>0 && pp < 50) { cells_per_page = pp }
-    } 
+    }
     if (grepl("^strand=", op))   f_strand = str_sub(op, 8)
     if (grepl("^no-none$", op)) show_none = F
   }
@@ -265,10 +265,10 @@ while (i <= n_cells) {
       if (nrow(local_seg)>0) {
           plt <- plt +
               geom_rect(data = local_seg, alpha = 0.4,
-                        aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf, fill = SV_class)) 
+                        aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf, fill = SV_class))
       }
     }
-    
+
     # Add colors for SV calls, if available
     if (!is.null(f_calls)) {
       local_svs = svs[CELLS, on = .(sample_cell), nomatch = 0]
@@ -278,15 +278,6 @@ while (i <= n_cells) {
                     aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf, fill = SV_class))
       }
     }
-    
-    # Highlight None bins, if requested
-    none_bins <- local_counts[class == "None"]
-    
-    if (show_none == T && nrow(none_bins)>0) {
-      plt <- plt +
-        geom_segment(data = none_bins, aes(x=start, xend=end, y=0, yend=0), col = "black", size = 2)
-    }
-    
 
     # Add bars for true SVs, if available
     if (!is.null(f_truth)) {
@@ -297,7 +288,7 @@ while (i <= n_cells) {
                     aes(xmin = start, xmax = end, ymin = y_lim, ymax = Inf, fill = SV_class))
       }
     }
-    
+
     # Add bars for strand states, if available
     if (!is.null(f_strand)) {
       local_strand = strand[CELLS, on = .(sample_cell), nomatch = 0]
@@ -310,7 +301,18 @@ while (i <= n_cells) {
 
     plt <- plt +
         geom_rect(aes(xmin = start, xmax=end, ymin=0, ymax = -w), fill='sandybrown') +
-        geom_rect(aes(xmin = start, xmax=end, ymin=0, ymax =  c), fill='paleturquoise4') +
+        geom_rect(aes(xmin = start, xmax=end, ymin=0, ymax =  c), fill='paleturquoise4')
+
+
+    # Highlight None bins, if requested
+    none_bins <- local_counts[class == "None"]
+    if (show_none == T && nrow(none_bins)>0) {
+      plt <- plt +
+        geom_segment(data = none_bins, aes(x=start, xend=end, y=0, yend=0), col = "black", size = 2)
+    }
+
+
+    plt <- plt +
         facet_wrap(~ sample_cell, ncol = 1) +
         ylab("Watson | Crick") + xlab(NULL) +
         scale_x_continuous(breaks = pretty_breaks(12), labels = format_Mb) +
