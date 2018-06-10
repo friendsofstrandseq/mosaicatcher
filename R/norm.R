@@ -30,7 +30,7 @@ setkey(counts, chrom, start, end)
 
 # Check that all cells have the same bins
 bins <- unique(counts[, .(chrom, start, end)])
-counts[, 
+counts[,
        assert_that(all(.SD == bins)),
        by = .(sample, cell),
        .SDcols = c("chrom", "start", "end")] %>% invisible
@@ -83,24 +83,27 @@ if (any(is.na(counts$scalar))) {
           unique(counts[,.(chrom, start, end, scalar)])[is.na(scalar), .N],
           " bins (out of ",
           unique(counts[,.(chrom, start, end)])[,.N],
-          ")")
+          ") -> set those to 1")
 }
 
 # Fill gaps in the norm file
 counts[is.na(scalar), `:=`(scalar = 1, norm_class = "good")]
 
 # Black-listing bins
-test <- unique(counts[,.(chrom,start,end,class,norm_class)])
-test <- test[, .(count_None = sum(class      == "None"),
+message("Use both black lists (data and normalization)")
+test <- counts[!bad_cells, on = c("sample","cell")][cell == unique(cell)[1]]
+test <- test[, .(count_None = sum(class == "None"),
          norm_None  = sum(norm_class == "None"),
          final_None = sum(class == "None" | norm_class == "None"))]
 message(" * ", test$count_None, " bins were already black-listed; ", test$norm_None, " are blacklisted via the normalization, leading to a total of ", test$final_None)
 counts[norm_class == "None", class := "None"]
 
 
+
 # Apply normalization factor
 counts[, `:=`(c = as.numeric(c), w = as.numeric(w))]
-counts[class != "None", `:=`(c = c/scalar, w = w/scalar)]
+counts[class != "None", `:=`(c = c * scalar,
+                             w = w * scalar)]
 message(" * Applying normalization: min = ",
         round(min(counts[class!="None", scalar]),3),
         ", max = ",
