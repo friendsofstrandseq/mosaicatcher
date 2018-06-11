@@ -5,6 +5,7 @@
  * New features for segmentation: penalize or ignore `None` bins
  * Segmentation accepts non-integer (i.e. normalize) count tables
  * `R/norm.R` can scale and black-list a count table
+ * `R/makeNorm.R` can generate a normalization file based on other Strand-seq data (EXPERIMENTAL)
  * `R/chrom.R` highlights `None` regions 
 
 ## Version 0.2
