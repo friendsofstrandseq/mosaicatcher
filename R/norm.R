@@ -114,6 +114,7 @@ message(" * Applying normalization: min = ",
 
 # Remove column
 counts[, norm_class := NULL]
+counts[, scalar := NULL]
 
 
 # Write down table

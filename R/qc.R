@@ -63,8 +63,8 @@ invisible(assert_that("chrom" %in% colnames(d),
             "end" %in% colnames(d) && is.integer(d$end),
             "sample" %in% colnames(d),
             "cell" %in% colnames(d),
-            "w" %in% colnames(d) && is.integer(d$w),
-            "c" %in% colnames(d) && is.integer(d$c),
+            "w" %in% colnames(d) && is.numeric(d$w),
+            "c" %in% colnames(d) && is.numeric(d$c),
             "class" %in% colnames(d)))
 
 # Re-name and -order chromosomes - this is human-specific
@@ -73,10 +73,9 @@ d = d[grepl('^([1-9]|[12][0-9]|X|Y)$', chrom),]
 d = d[, chrom := factor(chrom, levels=as.character(c(1:22,'X','Y')), ordered = T)]
 
 
-cairo_pdf(pdf_out, width=14, height=10, onefile = T)
 message("* Writing plot ", pdf_out)
 
-if (add_overview_plot) {
+if (add_overview_plot == T) {
 
     message("* Plotting an overview page")
 
@@ -153,9 +152,13 @@ if (add_overview_plot) {
     final <- plot_grid(title, content, ncol=1, rel_heights=c(0.07, 1))
     xxx   <- plot_grid(side, final, nrow = 1, rel_widths = c(0.05,1))
 
-    print(xxx)
 }
 
+
+cairo_pdf(pdf_out, width=14, height=10, onefile = T)
+if (add_overview_plot == T) {
+	print(xxx)
+}
 
 # Plot all cells
 for (s in unique(d$sample))
@@ -170,10 +173,12 @@ for (s in unique(d$sample))
         # Calculate some information
         info_binwidth = median(e$end - e$start)
         info_reads_per_bin = median(e$w + e$c)
+		if (!is.integer(info_reads_per_bin)) info_reads_per_bin = round(info_reads_per_bin,2) 
         info_chrom_sizes = e[, .(xend = max(end)), by = chrom]
         info_num_bins = nrow(e)
         info_total_reads = sum(e$c + e$w)
         info_y_limit = 2*info_reads_per_bin+1
+		if (!is.integer(info_y_limit)) info_y_limit = round(info_y_limit, 2)
         info_sample_name = substr(s,1,25)
         if (nchar(s)>25) info_sample_name = paste0(info_sample_name, "...")
         info_cell_name   = substr(ce,1,25)
