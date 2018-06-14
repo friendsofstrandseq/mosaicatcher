@@ -7,7 +7,7 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <unordered_map>
+#include <set>
 #include <tuple>
 
 #include <boost/program_options/cmdline.hpp>
@@ -49,7 +49,8 @@ using count::Counter;
 struct Conf_sces {
     boost::filesystem::path f_in;
     boost::filesystem::path f_out;
-    int32_t small_intv_size, low_support;
+    int32_t small_intv_size, low_support, window_size;
+    float cell_fraction;
 };
 
 
@@ -74,8 +75,10 @@ int main_strand_states(int argc, char **argv)
     po_generic.add_options()
     ("help,?", "show help message")
     ("out,o", boost::program_options::value<boost::filesystem::path>(&conf.f_out)->default_value("segments.txt"), "output file for counts")
-    ("ignore-small-regions,u", boost::program_options::value<int32_t>(&conf.small_intv_size)->implicit_value(5000000), "Ignore segments of this size or smaller")
-    ("ignore-low-support-regions,v", boost::program_options::value<int32_t>(&conf.low_support)->implicit_value(100), "Ignore segments with less reads than this")
+    ("ignore-small-regions,u", boost::program_options::value<int32_t>(&conf.small_intv_size)->default_value(5000000), "Ignore segments of this size or smaller")
+    ("ignore-low-support-regions,v", boost::program_options::value<int32_t>(&conf.low_support)->default_value(33), "Ignore segments with less reads than this")
+    ("recurrent-window-size,w", boost::program_options::value<int32_t>(&conf.window_size)->default_value(2000000), "Sliding window to determine recurrent state changes")
+    ("recurrent-fraction,f", boost::program_options::value<float>(&conf.cell_fraction)->default_value(0.1), "Fraction of cells with state change to be called recurrent")
     ;
 
     boost::program_options::options_description po_hidden("Hidden options");
@@ -111,28 +114,32 @@ int main_strand_states(int argc, char **argv)
             std::cout << "Specify --help for more details." << std::endl;
         } else {
             std::cout <<
-            "Sister Chromatid Exchange events (SCEs) are visible in Strand-seq\n"
-            "data as a change in the inherited strand states (e.g. from WW to WC)\n"
+            "Sister Chromatid Exchange events (SCEs) are visible in Strand-seq      \n"
+            "data as a change in the inherited strand states (e.g. from WW to WC)   \n"
             "which occurs at a random position in the chromosome. Here I implemented\n"
-            "a very heuristic approach to SCE detecion (described below). It is\n"
-            "recommended to provide a count table in a low resolution (e.g. 500kb)\n"
-            "to reduce the number of state flips.\n"
-            "\n"
-            "Algorithm:\n"
-            " 1. Combine consecutive intervals of the same state (taken from the\n"
-            "    class column in the count table) into larger intervals.\n"
-            " 2. Drop 'None' regions, which had been marked as bad regions across\n"
-            "    all cells. Special care is taken at the ends of the chromosomes:\n"
-            "    if a chromosome ends in a 'None' region, the adjacent region is\n"
-            "    extended to the end.\n"
-            " 3. Remove small (-u, recommended) or low-supported (-v) regions which\n"
-            "    are not concordant with the majority type of the chromosome. This\n"
-            "    should again reduce the number of state flips.\n"
-            "    NOTE: Only a single strand state is assumed per chromosome - there\n"
-            "          are chromosomes with more than one SCE, which this algorithm\n"
-            "          will miss."
-            " 4. Recurrence - not yet implemented! \n"
-            "" << std::endl;
+            "a very heuristic approach to SCE detecion (described below). It is     \n"
+            "recommended to provide a count table in a low resolution (e.g. 500kb)  \n"
+            "to reduce the number of state flips.                                   \n"
+            "                                                                       \n"
+            "Algorithm:                                                             \n"
+            " 1. Combine consecutive intervals of the same state (taken from the    \n"
+            "    class column in the count table) into larger intervals.            \n"
+            " 2. Drop 'None' regions, which had been marked as bad regions across   \n"
+            "    all cells. Special care is taken at the ends of the chromosomes:   \n"
+            "    if a chromosome ends in a 'None' region, the adjacent region is    \n"
+            "    extended to the end.                                               \n"
+            " 3. Remove small (-u) or low-supported (-v) regions which are not      \n"
+            "    concordant with the majority type of the chromosome. This should   \n"
+            "    again reduce the number of state flips.                            \n"
+            "    NOTE: Only a single strand state is assumed per chromosome - there \n"
+            "          are chromosomes with more than one SCE, which this algorithm \n"
+            "          will not capture correctly.                                  \n"
+            " 4. Recurrence:                                                        \n"
+            "    First, cluster the boundaries of strand states across all cells    \n"
+            "    (only internal to the chromosome, i.e. when the state changes).    \n"
+            "    When there are enough breakpoints (-f) inside a sliding window (-w)\n"
+            "    all non-majority segments with a boundary in this region will be   \n"
+            "    removed." << std::endl;
             std::cout << "" << std::endl;
         }
         return vm.count("help") ? 0 : 1;
@@ -203,6 +210,9 @@ int main_strand_states(int argc, char **argv)
     // strand_states[cell][chrom][interval]
     std::vector<std::vector<std::vector<Interval2>>> strand_states(counts.size(),
                                                                    std::vector<std::vector<Interval2>>(chromosomes.size()));
+    // majts[cell][chrom]
+    std::vector<std::vector<std::string>> majts(counts.size(),
+                                                std::vector<std::string>(chromosomes.size()));
 
     // Per sample, per chrom
     for (unsigned i = 0; i < counts.size(); ++i) {
@@ -262,6 +272,7 @@ int main_strand_states(int argc, char **argv)
                     std::cerr << "[Warning] The majority of chromosome " << chromosomes[chrom] << " in cell " << sample_cell_names[i].second << " is 'None'." << std::endl;
                 }
             }
+            majts[i][chrom] = majt;
 
 
             if (cci.size()>1) {
@@ -358,7 +369,12 @@ int main_strand_states(int argc, char **argv)
                     iter = reduce_adjacent(cci.begin(), iter,
                                            cci.begin(),
                                            [](Interval2 const & a, Interval2 const & b) -> bool {return a.label == b.label;},
-                                           [](Interval2 const & a, Interval2 const & b) {Interval2 ret(a); ret.end = b.end; return ret;}
+                                           [](Interval2 const & a, Interval2 const & b) {
+                                               Interval2 ret(a);
+                                               ret.end = b.end;
+                                               ret.watson_count += b.watson_count;
+                                               ret.crick_count += b.crick_count;
+                                               return ret;}
                                            );
                      cci.erase(iter, cci.end());
                 } // vm.count("ignore-small-regions") || vm.count("ignore-low-support-regions"))
@@ -372,11 +388,99 @@ int main_strand_states(int argc, char **argv)
     } // i
 
 
+
     // Step 7:
-    // Recurrence !
-    // todo
+    // Discover recurrence
+    std::vector<std::set<unsigned>> remove_boundaries(chromosomes.size());
+    for (int32_t chrom = 0; chrom < chromosomes.size(); ++chrom) {
+
+        // Insert all breakpoints of this chromosome into `break_pos`,
+        // except for 1st and last on the chromosome
+        std::vector<unsigned> break_pos;
+        for (unsigned i = 0; i < strand_states.size(); ++i) {
+            std::vector<Interval2> const & intvls = strand_states[i][chrom];
+            if(strand_states[i][chrom].size() > 1) {
+                for (unsigned j = 1; j < intvls.size(); ++j) {
+                    break_pos.push_back(intvls[j-1].end);  // end poins only
+                }
+            }
+        }
+
+        // Criterion: 10% of cells (at least 5) in 2 Mb criterion (change via -w, -f)
+        int minimum_cells = std::max(static_cast<int>(strand_states.size() * conf.cell_fraction), 5);
+
+        // skip if not enought state changes for this chromosome
+        if (break_pos.size() < minimum_cells) continue;
+
+        // Clustering of breakpoints
+        // =========================
+        std::sort(break_pos.begin(), break_pos.end());
+        int sum = 1;
+        auto left = break_pos.begin();
+        for (auto right = break_pos.begin(); right != break_pos.end(); ++right) {
+            // Finished interval
+            if (*right - *left > conf.window_size && sum >= minimum_cells) {
+                // Write down the boundaries that shall be removed
+                for (auto x = left; x != right; ++x)
+                    remove_boundaries[chrom].insert(*x);
+                --right;
+                std::cout << "Found interval with " << sum << " breakpoints in [" << *left << "," << *right << ")" <<  std::endl;
+                ++right;
+            }
+            while (*right - *left > conf.window_size) {
+                --sum;
+                ++left;
+            }
+            sum++;
+        }
+        // Finished interval
+        if (sum >= minimum_cells) {
+            std::cout << "Found interval with " << sum << " breakpoints in [" << *left << "," << "?" << ")" <<  std::endl;
+            // Write down the boundaries that shall be removed
+            for (auto x = left; x != break_pos.end(); ++x)
+                remove_boundaries[chrom].insert(*x);
+        }
+    }
 
 
+    // Step 8
+    // Remove recurrent state changes
+    for (unsigned i = 0; i < counts.size(); ++i) {
+        for (int32_t chrom = 0; chrom < chromosomes.size(); ++chrom) {
+
+            // renaming variables
+            std::vector<Interval2> & states = strand_states[i][chrom];
+            std::string const & majt = majts[i][chrom];
+            std::set<unsigned> const & to_remove = remove_boundaries[chrom];
+
+            if (states.size() <= 1) continue;
+
+            // Re-label intervals that touch the boundaries by the majority type
+            for (auto it = states.begin(); it != states.end(); ++it) {
+                if (to_remove.find(it->start) != to_remove.end() || to_remove.find(it->end) != to_remove.end()) {
+                    it->label = majt;
+                }
+            }
+
+            // Merge adjacent intervals
+            auto iter = reduce_adjacent(states.begin(), states.end(),
+                                        states.begin(),
+                                        [](Interval2 const & a, Interval2 const & b) -> bool {return a.label == b.label;},
+                                        [](Interval2 const & a, Interval2 const & b) {
+                                            Interval2 ret(a);
+                                            ret.end = b.end;
+                                            ret.watson_count += b.watson_count;
+                                            ret.crick_count += b.crick_count;
+                                            return ret;}
+                                        );
+            states.erase(iter, states.end());
+        }
+    }
+
+
+
+
+    // Write down results
     std::ofstream out(conf.f_out.string());
     std::cout << "[Write] strand states (incl. SCEs): " << conf.f_out.string() << std::endl;
     if (out.is_open()) {
