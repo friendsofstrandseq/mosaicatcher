@@ -1,7 +1,7 @@
 .*
 !/.gitignore
 !/.travis.yml
-src/main
-src/calc_bins
+build*
 data
 !data/exclude
+!tests/data
