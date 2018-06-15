@@ -44,6 +44,17 @@ using count::Counter;
  *
  * See `main_segment` for a description of which steps are done.
  *
+ * ### Handling of None bins:
+ *
+ * There are three options to handle None bins
+ *   - utilize-none   Treat None bins like any other bins (default)
+ *   - penalize-none  Add a cost factor to the cost matrix during segmentation to
+ *                    penalize segments that go through None bins. This should
+ *                    force the algorithm to place change points at the boarders of
+ *                    None stretches. It is currently a bit buggy.
+ *   - remove-none    Remove None regions from the data prior to segmentation. The
+ *                    results of the segmentation refer to the original bins again.
+ *
  * @todo Write description
  */
 
@@ -98,6 +109,13 @@ std::ostream& operator<< (std::ostream& stream, Matrix<Printable> const & m) {
  * dynamic programming from the optimal cost of a segmentation
  * of `[0, k-1]` with `cp-1` breakpoints (note that 0 <= k < n) plus
  * the actual cost of segment `[k, n]` from the "cost" matrix.
+ *
+ * The breakpoints listed in the final matrix are the right-most bin
+ * of a segment in 1-based coordinates, or one right of the last one
+ * in a 0-based coordinate system. In order to assign positions to the
+ * change points, use:
+ *    from = bins[ chrom_map[chrom] + (k == 0 ? 0 : breakpoints[cp][k-1]) ].start
+ *    to   = bins[ chrom_map[chrom] + breakpoints[cp][k] - 1 ].end
  *
  * @param cost Cost matrix (see `calculate_cost_matrix`)
  * @param max_cp Maximum number of breakpoints (<= N)
@@ -186,7 +204,8 @@ bool optimal_segment_dp(Matrix<double> const & cost,
         sse[cp] = (z >= 0) ? z : 1e10;  // 1e10 as a really really high value
 
         // Backtrack to get breakpoints
-        // i is always the oosition of the changepoint to the right (???)
+        // i is always the bin right of the changepoint (i.e. last bin in interval is i-1)
+        // For one segment (cp==1) --> this value is consequently N
         int i = (int)N;
         breakpoints[cp][cp] = N;
         for (int j = cp - 1; j >= 0; --j) {
@@ -531,9 +550,9 @@ int main_segment(int argc, char** argv) {
     // the user to alter the labels of certain regions.
     //
     std::vector<std::vector<std::pair<unsigned,unsigned>>> none_reg_local(chromosomes.size());
+    std::vector<unsigned> good_bins;
+    std::vector<int32_t> good_map;
     {
-        std::vector<unsigned> good_bins;
-        std::vector<int32_t> good_map;
 
         // Finding 'none' stretches
         unsigned num_none_bins = 0;
@@ -569,29 +588,6 @@ int main_segment(int argc, char** argv) {
         }
         std::cout << "[Info] Found " << none_reg_local.size() << " 'None' stretches";
         std::cout << ", in total " << num_none_bins << " bins." << std::endl;
-
-
-        // Alternative 3.3
-        // Remove 'none' bins from data before running segmentation.
-        //
-        if (vm.count("remove-none")) {
-
-            unsigned new_len = good_map[chromosomes.size()];
-            // Remove bins (columns) from counts
-            for (unsigned i = 0; i < counts.size(); ++i) {
-                for (unsigned gbin = 0; gbin < new_len; ++gbin) {
-                    counts[i][gbin] = counts[i][good_bins[gbin]];
-                }
-                counts[i].resize(new_len);
-            }
-            // ... and from bins
-            for (unsigned gbin = 0; gbin < new_len; ++gbin) {
-                bins[gbin] = bins[good_bins[gbin]];
-            }
-            bins.resize(new_len);
-            // Overwrite chrom_map:
-            chrom_map = good_map;
-        } // if (vm.count("penalize-none"))
     }
 
 
@@ -601,6 +597,26 @@ int main_segment(int argc, char** argv) {
 
     // prepare OUTPUT file
     std::ofstream out(conf.f_out.string());
+    out << "# Breakpoint file generated via this command: " << std::endl;
+    out << "# > ";
+    for (unsigned x = 0; x < argc; ++x) out << argv[x] << " ";
+    out << std::endl;
+    out << "# sample       Sample name" << std::endl;
+    out << "# cells        Number of cells used in segmentation" << std::endl;
+    out << "# . chrom      Segmented chromosome" << std::endl;
+    out << "# . bins       Number of bins during segmentation. This can be lower " << std::endl;
+    out << "#              than total number of bins on this chromosome (--remove-none)" << std::endl;
+    out << "# . maxcp      Max. number of change points used (--max_bp)" << std::endl;
+    out << "# . maxseg     Max. segment length in number of bins (--max_segment)" << std::endl;
+    out << "# . none_bins  Number of `None` bins in this chrom" << std::endl;
+    out << "# . none_regs  Number of consecutive `None` regions in this chrom" << std::endl;
+    out << "# . action     How to treat `None` bins (--remove-none, --penalize-none)" << std::endl;
+    out << "# ... k        Current max. number of change points" << std::endl;
+    out << "# ... sse      Standard squared error associated with the current segmentation" << std::endl;
+    out << "# ..... bps    Index of last bin in the segment (0-based)" << std::endl;
+    out << "# ..... start  Start position [bp] of the segment defined by bps" << std::endl;
+    out << "# ..... end    End position [bp] of the segment defined by bps" << std::endl;
+
     out << "sample\t";
     out << "cells\t";
     out << "chrom\t";
@@ -608,7 +624,7 @@ int main_segment(int argc, char** argv) {
     out << "maxcp\t";
     out << "maxseg\t";
     out << "none_bins\t";
-    out << "none_regions\t";
+    out << "none_regs\t";
     out << "action\t";
     out << "k\t";
     out << "sse\t";
@@ -622,31 +638,19 @@ int main_segment(int argc, char** argv) {
     for (int32_t chrom=0; chrom < chromosomes.size(); ++chrom)
     {
         std::chrono::steady_clock::time_point t3 = std::chrono::steady_clock::now();
-        // parameters:
-        // max_k = longest allowed segment
-        // max_cp = max. number of change points, at least 10
-        unsigned N = chrom_map[chrom+1] - chrom_map[chrom];
-        unsigned chrom_size = bins[chrom_map[chrom+1]-1].end - bins[chrom_map[chrom]].start;
-        unsigned max_k  = std::min(std::max(static_cast<unsigned>(10),
-                                            static_cast<unsigned>(conf.max_segment_length/window_size)),
-                                   static_cast<unsigned>(N));
-        unsigned max_cp = std::min(std::max(static_cast<unsigned>(10),
-                                            static_cast<unsigned>(ceil((float)chrom_size/1e6 * conf.max_bp_per_Mb))),
-                                   N-1);
-
-
-        // Skip empty chromosomes
-        if (N <= 1) continue;
-
 
         // Put both strands of each cell into data.
         // Normalize each cell by its mean coverage first, by default,
         // but this can be switched off.
+        unsigned N = chrom_map[chrom+1] - chrom_map[chrom];
+        if (N <= 1) continue;
+
         Matrix<double> data;
         for (unsigned i = 0; i < counts.size(); ++i)
         {
-            if (!vm.count("do-not-normalize-cells")) {
-                if (i==0) std::cout << "[Info] Normalize cells by mean counts (excl. None regions)" << std::endl;
+            if (!vm.count("do-not-normalize-cells"))
+            {
+                if (i==0 && chrom == 0) std::cout << "[Info] Normalize cells by mean counts (excl. None regions)" << std::endl;
                 double cell_mean = mean_per_cell[i];
                 std::vector<double> tmp(N);
                 std::transform(counts[i].begin() + chrom_map[chrom],
@@ -675,6 +679,33 @@ int main_segment(int argc, char** argv) {
         }
 
 
+        // Alternative 3.3
+        // Remove 'none' bins from data before running segmentation.
+        if (vm.count("remove-none")) {
+            unsigned new_len = good_map[chrom+1] - good_map[chrom];
+            for(unsigned i = 0; i < data.size(); ++i) {
+                for (unsigned gbin = 0; gbin < new_len; ++gbin) {
+                    data[i][gbin] = data[i][good_bins[good_map[chrom]+gbin] - good_bins[good_map[chrom]]];
+                }
+                data[i].resize(new_len);
+            }
+            N = new_len;
+        }
+
+
+        // parameters:
+        // max_k = longest allowed segment
+        // max_cp = max. number of change points, at least 10
+        unsigned chrom_size = bins[chrom_map[chrom+1]-1].end - bins[chrom_map[chrom]].start;
+        unsigned max_k  = std::min(std::max(static_cast<unsigned>(10),
+                                            static_cast<unsigned>(conf.max_segment_length/window_size)),
+                                   static_cast<unsigned>(N));
+        unsigned max_cp = std::min(std::max(static_cast<unsigned>(10),
+                                            static_cast<unsigned>(ceil((float)chrom_size/1e6 * conf.max_bp_per_Mb))),
+                                   N-1);
+
+
+
         // New Cost matrix
         Matrix<double> new_cost;
         if (!calculate_cost_matrix(data, max_k, new_cost)) {
@@ -698,6 +729,9 @@ int main_segment(int argc, char** argv) {
         // a penalty to intervals violating the boarders.
         if (vm.count("penalize-none"))
         {
+            if (chrom == 0)
+                std::cout << "[Warning] --penalize-none is currently buggy - some None stretches are being ignored. This might be due to repeated overwriting of values in the breakpoint table, but I am not sure yet" << std::endl;
+
             for (auto stretch : none_reg_local[chrom])
             {
                 // Penalize all segments that violate these boarders.
@@ -711,10 +745,13 @@ int main_segment(int argc, char** argv) {
             }
         } // vm.count("penalize-none")
 
+        if (N<1) {
+            std::cout << "[Warning]: Chromosome " << chromosomes[chrom] << " was completely removed via None bins" << std::endl;
+            continue;
+        }
 
 
         // print cost matrix for a chromosome
-        // todo: remove later
         if (vm.count("cost-matrix") && chromosomes[chrom] == conf.cm_chrom) {
             std::ofstream out(conf.f_cost_mat.string());
             if (out.is_open()) {
@@ -726,7 +763,6 @@ int main_segment(int argc, char** argv) {
         }
 
 
-
         // Find optimal segmentation
         Matrix<int> breakpoints;
         std::vector<double> sse;
@@ -735,18 +771,33 @@ int main_segment(int argc, char** argv) {
             continue;
         }
 
+        // Alternative 3.3
+        // Transform coordinates in `breakpoints` back to orignal coordinates
+        if (vm.count("remove-none")) {
+            for (unsigned cp = 0; cp < max_cp; ++cp) {
+                for (unsigned k = 0; k <= cp; ++k) {
 
+                    unsigned gbin_pos = good_map[chrom] + breakpoints[cp][k];
+                    assert(gbin_pos <= good_bins.size());
 
+                    // map back from bin in "good_bin space" to orginal space
 
-        
-        // number of none bins
+                    if (gbin_pos == good_map[chrom+1])
+                        // special case of going across the chromosome
+                        breakpoints[cp][k] = chrom_map[chrom+1] - chrom_map[chrom];
+                    else
+                        breakpoints[cp][k] = good_bins[gbin_pos] - chrom_map[chrom];
+                }
+            }
+        }
+
+        // number of none bins (for output)
         unsigned num_none = 0;
         for (auto stretch : none_reg_local[chrom])
             num_none += stretch.second - stretch.first + 1;
         unsigned num_none_regions = none_reg_local[chrom].size();
 
         // Output of breakpoints;
-
         if (out.is_open()) {
             std::chrono::steady_clock::time_point t4 = std::chrono::steady_clock::now();
             auto time2 = std::chrono::duration_cast<std::chrono::duration<double>>(t4 - t3).count();
