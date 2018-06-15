@@ -124,7 +124,7 @@ int main_count(int argc, char **argv)
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&conf.f_excl), "Exclude chromosomes and regions")
     ("info,i", boost::program_options::value<boost::filesystem::path>(&conf.f_info), "Write info about samples")
     ("do-not-filter-by-WC", "When black-listing bins, only consider coverage and not WC/WW/CC states")
-    ("do-not-blacklist-hmm", "Do not apply a blacklist (None bins). Internally bins will be blacklisted for parameter estimation, but this will not have effect on the HMM")
+    ("do-not-blacklist-hmm", "Do not output a blacklist (None bins). Bins will be blacklisted for parameter estimation, but not during HMM")
     ;
 
     boost::program_options::options_description hidden("Hidden options");
