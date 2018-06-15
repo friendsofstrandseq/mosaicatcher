@@ -102,9 +102,7 @@ void run_standard_HMM(std::vector<TGenomeCounts> & counts,
         });
         run_HMM(hmm, counts[*i], good_bins, good_map);
     }
-
 }
-
 
 
 
@@ -126,6 +124,7 @@ int main_count(int argc, char **argv)
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&conf.f_excl), "Exclude chromosomes and regions")
     ("info,i", boost::program_options::value<boost::filesystem::path>(&conf.f_info), "Write info about samples")
     ("do-not-filter-by-WC", "When black-listing bins, only consider coverage and not WC/WW/CC states")
+    ("do-not-blacklist-hmm", "Do not apply a blacklist (None bins). Internally bins will be blacklisted for parameter estimation, but this will not have effect on the HMM")
     ;
 
     boost::program_options::options_description hidden("Hidden options");
@@ -369,14 +368,25 @@ int main_count(int argc, char **argv)
     // Chapter: Run HMM
     // ================
     //
-    run_standard_HMM( counts,
-                      good_cells,
-                      cells,
-                      good_bins,
-                      good_map,
-                      samples,
-                      10.0f / bins.size());
-
+    if(vm.count("do-not-blacklist-hmm")) {
+        std::vector<unsigned> normal_bins(bins.size());
+        std::iota(normal_bins.begin(), normal_bins.end(), 0);
+        run_standard_HMM(counts,
+                         good_cells,
+                         cells,
+                         normal_bins,
+                         chrom_map,
+                         samples,
+                         10.0f / bins.size());
+    } else {
+        run_standard_HMM(counts,
+                         good_cells,
+                         cells,
+                         good_bins,
+                         good_map,
+                         samples,
+                         10.0f / good_bins.size());
+    }
 
 
 

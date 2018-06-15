@@ -173,7 +173,7 @@ std::vector<unsigned> get_good_bins(std::vector<TGenomeCounts> const & counts,
 
     for (unsigned bin = 0; bin < N; ++bin)
     {
-        if (bin_means[bin] < std::max(0.05f, mean_mean - 4 * mean_sd)) {
+        if (bin_means[bin] < 0.1) {
             reasons[bin] = 'l'; // mean too low
         // } else if (bin_means[bin] > mean_mean + 4 * mean_sd) {
         //     reasons[bin] = 'h'; // mean too high
