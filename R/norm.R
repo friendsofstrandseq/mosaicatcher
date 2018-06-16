@@ -31,25 +31,26 @@ setkey(counts, chrom, start, end)
 # Check that all cells have the same bins
 bins <- unique(counts[, .(chrom, start, end)])
 counts[,
-       assert_that(all(.SD == bins)),
+       assert_that(all(.SD == bins), msg = "Not the same bins in all cells"),
        by = .(sample, cell),
        .SDcols = c("chrom", "start", "end")] %>% invisible
 
 
 # remove bad cells
 bad_cells <- counts[class == "None", .N, by = .(sample, cell)][N == nrow(bins)]
-# if (nrow(bad_cells)>0) {
-#   message(" * Removing ", nrow(bad_cells), " cells because thery were black-listed.")
-#   counts <- counts[!bad_cells, on = c("sample","cell")]
-# }
+if (nrow(bad_cells)>0) {
+  message(" * Removing ", nrow(bad_cells), " cells because thery were black-listed.")
+  counts <- counts[!bad_cells, on = c("sample","cell")]
+}
 
 # Check that the "None" bins are all the same across cells
 none_bins <- unique(counts[!bad_cells, on = c("sample","cell")][class == "None", .(chrom, start, end)])
-counts[!bad_cells, on = c("sample","cell")][class == "None",
-       assert_that(all(.SD == none_bins)),
-       by = .(sample, cell),
-       .SDcols = c("chrom", "start", "end")] %>% invisible
-
+if (nrow(none_bins) > 0) {
+  counts[!bad_cells, on = c("sample","cell")][class == "None",
+         assert_that(all(.SD == none_bins, msg = "None bins are not the same in all cells (excl. bad cells)")),
+         by = .(sample, cell),
+         .SDcols = c("chrom", "start", "end")] %>% invisible
+}
 
 
 # Read normalization factors
@@ -90,7 +91,6 @@ if (any(is.na(counts$scalar))) {
 counts[is.na(scalar), `:=`(scalar = 1, norm_class = "good")]
 
 # Black-listing bins
-message("Use both black lists (data and normalization)")
 test <- counts[!bad_cells, on = c("sample","cell")][cell == unique(cell)[1]]
 test <- test[, .(count_None = sum(class == "None"),
          norm_None  = sum(norm_class == "None"),
