@@ -135,8 +135,8 @@ int main_strand_states(int argc, char **argv)
             "          are chromosomes with more than one SCE, which this algorithm \n"
             "          will not capture correctly.                                  \n"
             " 4. Recurrence:                                                        \n"
-            "    First, cluster the boundaries of strand states across all cells    \n"
-            "    (only internal to the chromosome, i.e. when the state changes).    \n"
+            "    Check for clusters of change points across all cells, but only     \n"
+            "    internal to the chromosomes, not the telomeres.               .    \n"
             "    When there are enough breakpoints (-f) inside a sliding window (-w)\n"
             "    all non-majority segments with a boundary in this region will be   \n"
             "    removed." << std::endl;

@@ -126,6 +126,9 @@ int main_count(int argc, char **argv)
     ("do-not-filter-by-WC", "When black-listing bins, only consider coverage and not WC/WW/CC states")
     ("do-not-blacklist-hmm", "Do not apply a blacklist (None bins). Internally bins will be blacklisted for parameter estimation, but this will not have effect on the HMM")
     ;
+    // Note: Currently the blacklisting is done after counting via R/norm.R. A better way would be to 
+    // input the blacklist + normalization into MosaiCatcher during the counting, then the HMM could be run
+    // only on non-blacklisted bins. Now it is run through many bad bin that potentially affect the quality of results.
 
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
