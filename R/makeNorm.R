@@ -10,6 +10,9 @@ if (length(args)<2) {
   stop()
 }
 
+make_custom_plots <- F
+
+
 
 # Read test sample
 message(" * Read test sample: ", args[1])
@@ -22,7 +25,6 @@ for (x in args[2:length(args)]) {
              cbind(data.table(fread(paste("zcat",x)), 
                               file = sub(paste0("samples/(.*)_[0-9]+\\.txt.gz"), "\\1", x))))
 }
-
 
 # Normalize each cell by its mean
 setkey(TEST, sample, cell, chrom, start, end)
@@ -38,6 +40,29 @@ DF[, assert_that(all(.SD == bins)), by = .(sample, cell), .SDcols = c("chrom","s
 TEST[, assert_that(all(.SD == bins)), by = .(sample, cell), .SDcols = c("chrom","start","end")] %>% invisible
 
 
+# Remove low-quality cells
+bad_cells <- DF[class=="None", .N, by = .(sample,cell)][N == nrow(bins)]
+DF <- DF[!bad_cells, on = c("sample","cell")]
+
+
+# Plot a exemplatory region
+  plot_data <- rbind(cbind(DF[chrom == "chr7", .(chrom,start,end,cov_norm)], sample = "test"),
+                     cbind(TEST[chrom == "chr7", .(chrom,start,end,cov_norm)], sample = "control"))
+  p0 <- ggplot(plot_data[chrom =="chr7" & start >= 7e6 & end <= 14e6]) +
+    aes(start, cov_norm, group = start, fill = sample) +
+    geom_boxplot(size = 0.5, col = "#555555") +
+    scale_x_continuous(labels = function(x){return(paste(x/1e6, "Mb"))}) +
+    geom_hline(yintercept=1, linetype = "dashed") +
+    coord_cartesian(ylim = c(0,3)) +
+    facet_grid(sample ~ .) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle=90)) +
+    xlab("Genomic bin") +
+    ylab("coverage per cell") +
+    ggtitle("Normalized counts per bin across all cells data (chr1)") +
+    guides(fill=F)
+
+
 # Take mean coverage across all cells per sample
 message(" * Get mean coverage across all control samples")
 CONTROL = DF[, 
@@ -50,27 +75,31 @@ TEST = TEST[,
 
 
 # Black-list weird bins:
-CONTROL[mean < 1e-3, mean := 1e-3]
-CONTROL[, class := ifelse(mean > 3 | mean < 1/3, "None","good")]
+CONTROL[mean < 1e-2, mean := 1e-2]
+CONTROL[, class := ifelse(mean > 2 | mean < 1/2, "None","good")]
 message(" * Black-list ", nrow(CONTROL[class == "None"]), "/", nrow(CONTROL), " control bins based on mean")
 
 
+
   # Plot information about black-listing
-  p1 = ggplot(CONTROL) + 
-    geom_histogram(aes(mean, fill = class), binwidth = 0.05) + 
-    scale_x_log10(labels = scales::percent, breaks = c(0.1, 1, 10)) +
-    geom_vline(xintercept = 3, linetype = "dotted") +
-    geom_vline(xintercept = 1/3, linetype = "dotted") +
+  p1 = ggplot(CONTROL[mean<100]) +
+    geom_histogram(aes(mean), binwidth = 0.05) +
+    scale_x_log10(labels = scales::percent, breaks = c(0.1, 0.5, 1, 2,10)) +
+    coord_cartesian(xlim = c(1e-2,10)) +
+    geom_vline(xintercept = 2, linetype = "dotted") +
+    geom_vline(xintercept = 1/2, linetype = "dotted") +
     xlab("Normalized coverage per bin") +
-    ggtitle(paste("Mean normalized coverage in control samples"))
+    ggtitle(paste("Mean normalized coverage in control samples")) +
+    theme_bw()
 
-
-# Further black-list those bins that appear to have a high standard deviation (scaled to their mean)
+  # Further black-list those bins that appear to have a high standard deviation (scaled to their mean)
   p2 = ggplot(CONTROL[mean>0]) + 
-    geom_point(aes(mean, sd/mean, col = class, shape = sd/mean>1)) +
+    geom_point(aes(mean, sd, col = class, shape = sd/mean>1)) +
     scale_x_log10() + scale_y_log10() +
     geom_hline(yintercept = 1, linetype = "dotted") +
     ggtitle("Mean vs SD of norm coverage across bins")
+
+
 
 none_before = nrow(CONTROL[class == "None"])
 CONTROL[sd/mean > 1, class := "None"]
@@ -84,9 +113,11 @@ X = merge(CONTROL[, .(chrom, start, end, control_cov = mean, class)],
 X[class!="None", control_cov := control_cov / mean(control_cov)]
 X[class!="None", test_cov    := test_cov / mean(test_cov)]
 slope = lm(test_cov ~ control_cov, data = X[class != "None"])$coefficients[2]
+correlation = cor(X[class!="None",control_cov], X[class!="None", test_cov])
 message(" * test and control have a linear relationship with slope ",
         round(slope,3), " and a correlation of Pearson's r = ", 
         round(cor(X[class!="None",control_cov], X[class!="None", test_cov]),3))
+
 
 
   # Now plot CONTROL  vs. TEST
@@ -94,13 +125,20 @@ message(" * test and control have a linear relationship with slope ",
     aes(control_cov, test_cov, col = chrom) +
     geom_point(alpha = 0.5) +
     geom_smooth(aes(control_cov, test_cov), method = "lm", inherit.aes = F) +
-    ggtitle(paste0("Correlation of mean coverages (Slope = ", slope, "; None bins removed)"))
+    ggtitle(paste0("Mean coverage per bin (slope = ", round(slope,2), "; Pearson's r = ", round(correlation,2), ")")) +
+    theme_bw() +
+    coord_cartesian(ylim = c(0,2.5)) +
+    theme(legend.position = "bottom", legend.box = "horizontal") +
+    guides(col = guide_legend(nrow=3, title = NULL, override.aes = list(size=3))) +
+    xlab("Normalized coverage in control sample") +
+    ylab("Normalized coverage in test sample")
+
 
 
 # Apply scaling factor and write table  
 X[, scalar := 1.0]
 X[class!="None", scalar := 1/(((control_cov - mean(control_cov)) * slope) + mean(control_cov))]
-
+summary(X$scalar)
 
 message(" * Writing table to norm.txt")
 write.table(X[, .(chrom, start, end, scalar, class)], "norm.txt", quote=F, col.names = T, sep="\t", row.names = F)
