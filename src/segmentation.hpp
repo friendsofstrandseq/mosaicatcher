@@ -11,7 +11,6 @@
 #include <iostream>
 #include <vector>
 #include <limits>
-#include <math.h>  // M_PI
 #include <iomanip> // setw
 #include <numeric> // partial_sum
 #include <chrono>
@@ -22,6 +21,7 @@
 #include <boost/program_options/variables_map.hpp>
 #include <boost/filesystem.hpp>
 
+#include "program_options.hpp"
 #include "version.hpp"
 #include "utils.hpp"
 #include "iocounts.hpp"
@@ -361,6 +361,7 @@ struct Conf_segment {
     boost::filesystem::path f_out;
     boost::filesystem::path f_cost_mat;
     float max_bp_per_Mb;
+    unsigned max_bp_intercept;
     float none_penalty;
     float merge_threshold;
     unsigned max_segment_length;
@@ -394,7 +395,8 @@ int main_segment(int argc, char** argv) {
 
     boost::program_options::options_description po_segmentation("Segmentation options");
     po_segmentation.add_options()
-    ("max_bp,m", boost::program_options::value<float>(&conf.max_bp_per_Mb)->default_value(0.333), "maximum number of breakpoints per Mb")
+    ("max_bp_per_Mb,m", boost::program_options::value<float>(&conf.max_bp_per_Mb)->default_value(0.25)->notifier(in_range(0,1,"max_bp_per_Mb")), "max. number of change points per Mb")
+	("max_bp_intercept,i", boost::program_options::value<unsigned>(&conf.max_bp_intercept)->default_value(15)->notifier(in_range(0,50,"max_bp_intercept")), "max. number of cp, add this constant")
     ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(100000000), "maximum segment length")
     ("penalize-none", boost::program_options::value<float>(&conf.none_penalty)->implicit_value(100), "Penalize segments through removed bins (which are marked by 'None' in the counts table).")
     ("remove-none", "Remove segments through removed bins before segmentation. Mutually exclusive with --penalize-none.")
@@ -606,7 +608,7 @@ int main_segment(int argc, char** argv) {
     out << "# . chrom      Segmented chromosome" << std::endl;
     out << "# . bins       Number of bins during segmentation. This can be lower " << std::endl;
     out << "#              than total number of bins on this chromosome (--remove-none)" << std::endl;
-    out << "# . maxcp      Max. number of change points used (--max_bp)" << std::endl;
+    out << "# . maxcp      Max. number of change points used (max_bp_intercept + chrom_size/1e6 * max_bp_per_Mb)" << std::endl;
     out << "# . maxseg     Max. segment length in number of bins (--max_segment)" << std::endl;
     out << "# . none_bins  Number of `None` bins in this chrom" << std::endl;
     out << "# . none_regs  Number of consecutive `None` regions in this chrom" << std::endl;
@@ -700,10 +702,7 @@ int main_segment(int argc, char** argv) {
         unsigned max_k  = std::min(std::max(static_cast<unsigned>(10),
                                             static_cast<unsigned>(conf.max_segment_length/window_size)),
                                    static_cast<unsigned>(N));
-        unsigned max_cp = std::min(std::max(static_cast<unsigned>(10),
-                                            static_cast<unsigned>(ceil((float)chrom_size/1e6 * conf.max_bp_per_Mb))),
-                                   N-1);
-
+        unsigned max_cp = std::min(conf.max_bp_intercept + static_cast<unsigned>(ceil( (float)chrom_size/1e6 * conf.max_bp_per_Mb )),  N-1);
 
 
         // New Cost matrix
