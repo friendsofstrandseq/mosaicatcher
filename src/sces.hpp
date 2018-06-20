@@ -406,8 +406,8 @@ int main_strand_states(int argc, char **argv)
             }
         }
 
-        // Criterion: 10% of cells (at least 5) in 2 Mb criterion (change via -w, -f)
-        int minimum_cells = std::max(static_cast<int>(strand_states.size() * conf.cell_fraction), 5);
+        // Criterion: 10% of cells (at least 3) in 2 Mb criterion (change via -w, -f)
+        int minimum_cells = std::max(static_cast<int>(strand_states.size() * conf.cell_fraction), 3);
 
         // skip if not enought state changes for this chromosome
         if (break_pos.size() < minimum_cells) continue;
