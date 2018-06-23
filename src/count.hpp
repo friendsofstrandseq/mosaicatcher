@@ -369,6 +369,7 @@ int main_count(int argc, char **argv)
     // ================
     //
     if(vm.count("do-not-blacklist-hmm")) {
+        if (vm.count("verbose")) std::cout << "[Info] Previous filters are not used during HMM phase" << std::endl;
         std::vector<unsigned> normal_bins(bins.size());
         std::iota(normal_bins.begin(), normal_bins.end(), 0);
         run_standard_HMM(counts,
