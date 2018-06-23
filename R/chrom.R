@@ -93,14 +93,6 @@ print_usage_and_stop = function(msg = NULL) {
 # Command Line Arguments                                                       #
 ################################################################################
 
-args <- c("segments=../../20180417_ss_simulations/run_20180401/segmentation2/seed5_size200000-400000_vaf20-50-50000/50000_fixed.fraction15.txt",
-          "truth=../../20180417_ss_simulations/run_20180401/simulation_new/seed5_size200000-400000_vaf20-50/variants-50000.txt",
-          "per-page=12",
-          "calls=../../20180417_ss_simulations/run_20180401/sv_calls/seed5_size200000-400000_vaf20-50-50000/50000_fixed.fraction15/simple_llr2.txt",
-          "../../20180417_ss_simulations/run_20180401/counts/seed5_size200000-400000_vaf20-50-50000/50000_fixed.txt.gz",
-          "chr1",
-          "test.pdf")
-
 args <- commandArgs(trailingOnly = T)
 
 if (length(args)< 3) print_usage_and_stop("[Error] Too few arguments!")
@@ -157,7 +149,7 @@ if (length(args)>3) {
   bins = unique(counts[, .(chrom, start, end)])
 
 ### Check CHROM:
-assert_that(CHROM %in% unique(counts$chrom))
+assert_that(CHROM %in% unique(counts$chrom)) %>% invisible
 counts = counts[chrom == CHROM]
 
 ### Check SV call file
@@ -175,7 +167,10 @@ if (!is.null(f_calls)) {
   }
   assert_that(all(svs$SV_class %in% names(manual_colors))) %>% invisible
   svs[, sample_cell := paste(sample, "-", cell)]
-  assert_that(all(unique(svs$sample_cell) %in% unique(counts$sample_cell))) %>% invisible
+
+  set_diff <- setdiff(unique(svs$sample_cell), unique(counts$sample_cell))
+  if (length(set_diff)>0) message("[Warning] SV calls and Counts differ in cells: ", set_diff)
+
   svs = svs[chrom == CHROM]
 }
 
@@ -210,7 +205,10 @@ if (!is.null(f_truth)) {
               "SV_type" %in% colnames(simul)) %>% invisible
   simul[, `:=`(SV_class = paste0("simul_",SV_type), SV_type = NULL, sample_cell = paste(sample, "-", cell))]
   simul[, sample_cell := paste(sample, "-", cell)]
-  assert_that(all(unique(simul$sample_cell) %in% unique(counts$sample_cell))) %>% invisible
+
+  set_diff <- setdiff(unique(simul$sample_cell), unique(counts$sample_cell))
+  if (length(set_diff)>0) message("[Warning] True SVs and Counts differ in cells: ", set_diff)
+
   simul = simul[chrom == CHROM]
 }
 
@@ -223,10 +221,13 @@ if (!is.null(f_strand)) {
               "chrom"   %in% colnames(strand),
               "start"   %in% colnames(strand),
               "end"     %in% colnames(strand),
-              "class"   %in% colnames(strand))
+              "class"   %in% colnames(strand)) %>% invisible
   strand[, class := paste("State:", class)]
   strand[, sample_cell := paste(sample, "-", cell)]
-  assert_that(all(unique(strand$sample_cell) %in% unique(counts$sample_cell))) %>% invisible
+
+  set_diff <- setdiff(unique(strand$sample_cell), unique(counts$sample_cell))
+  if (length(set_diff)>0) message("[Warning] Strand states and Counts differ in cells: ", set_diff)
+
   strand = strand[chrom == CHROM]
 }
 

@@ -57,6 +57,7 @@ int main(int argc, char **argv)
         std::cout << "    segment     Find a segmentation across binned counts" << std::endl;
         std::cout << "    simulate    Simulate Strand-seq data" << std::endl;
         std::cout << "    makebins    Create variable-width bins based on real data" << std::endl;
+        std::cout << "    states      Determine strand states including SCEs" << std::endl;
         std::cout << std::endl;
 
         if (argc >= 2 && std::string(argv[1]) == "--help") {
