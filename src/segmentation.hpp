@@ -239,6 +239,9 @@ Matrix<double> calculate_cost_matrix(std::vector<double> const & data,
     // See https://www.bioconductor.org/packages/devel/bioc/vignettes/tilingArray/inst/doc/costMatrix.pdf
     // for an explanation of the algebra
 
+    // Rows 0 ... max_k => segment lengths (1 ... max_k+1)
+    // Columns 0 ... N  => start position of segment
+
     double ZERO_THR = 1.1e-10;
 
     unsigned N = (unsigned)data.size();
@@ -366,6 +369,7 @@ struct Conf_segment {
     float merge_threshold;
     unsigned max_segment_length;
     bool remove_bad_cells;
+    unsigned min_num_bins_per_segment;
     std::string cm_chrom;
 };
 
@@ -399,6 +403,7 @@ int main_segment(int argc, char** argv) {
 	("max_bp_intercept,i", boost::program_options::value<unsigned>(&conf.max_bp_intercept)->default_value(15)->notifier(in_range(0,50,"max_bp_intercept")), "max. number of cp, add this constant")
     ("max_segment,M", boost::program_options::value<unsigned>(&conf.max_segment_length)->default_value(100000000), "maximum segment length")
     ("penalize-none", boost::program_options::value<float>(&conf.none_penalty)->implicit_value(100), "Penalize segments through removed bins (which are marked by 'None' in the counts table).")
+    ("forbid-small-segments", boost::program_options::value<unsigned>(&conf.min_num_bins_per_segment)->default_value(1)->notifier(in_range(1,20,"forbid-small-segments")), "Penalize segments shorter that this number of bins")
     ("remove-none", "Remove segments through removed bins before segmentation. Mutually exclusive with --penalize-none.")
     ("do-not-normalize-cells", "Instead of using cell-normalized counts for each strand, use the raw numbers.")
     ("do-not-remove-bad-cells", "Keep all cells (by default, cells which are marked 'None' in all bins get removed")
@@ -708,7 +713,7 @@ int main_segment(int argc, char** argv) {
         // New Cost matrix
         Matrix<double> new_cost;
         if (!calculate_cost_matrix(data, max_k, new_cost)) {
-            std::cout << "[Error] Segmentation failed on " << chromosomes[chrom] << std::endl;
+            std::cout << "[Error] Cost matrix calculation failed on " << chromosomes[chrom] << std::endl;
             continue;
         }
 
@@ -719,6 +724,16 @@ int main_segment(int argc, char** argv) {
         for (unsigned k=0; k<max_k; ++k)
             for (unsigned j=N-k; j<N; ++j)
                 assert(new_cost[k][j] <= 0);
+
+
+        // Penalize short segments
+        if (conf.min_num_bins_per_segment > 1) {
+            for (unsigned k = 0; k + 1 < conf.min_num_bins_per_segment && k < max_k; ++k) {
+                for (unsigned j = 0; j < N-k; ++j) {
+                    new_cost[k][j] += static_cast<float>(100);
+                }
+            }
+        }
 
 
 
