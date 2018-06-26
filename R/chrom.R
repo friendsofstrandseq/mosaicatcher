@@ -46,7 +46,7 @@ manual_colors = c(
   complex         = "darkorchid1",
     # background
   bg1 = "#ffffff",
-  bg2 = "#dddddd",
+  bg2 = "#aaafaa",
     # Strand states
   `State: WW` = "sandybrown",
   `State: CC` = "paleturquoise4",
