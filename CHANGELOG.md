@@ -2,11 +2,14 @@
 
 ## Version 0.3
 
- * New features for segmentation: penalize or remove `None` bins
- * Segmentation accepts non-integer (i.e. normalize) count tables
- * `R/norm.R` can scale and black-list a count table
+ * New features for segmentation:
+   * Penalizes or remove `None` bins
+   * Accepts non-integer (i.e. normalize) count tables
+   * Forbid segments of too few bins (by penalizing them in the cost matrix)
+   * Number of segments now is 15 + 0.25 * Mb
+ * `R/norm.R` can scale (normalize) and black-list a count table
  * `R/makeNorm.R` can generate a normalization file based on other Strand-seq data (EXPERIMENTAL)
- * `R/chrom.R` highlights `None` regions 
+ * `R/chrom.R` highlights `None` regions
 
 ## Version 0.2
 
