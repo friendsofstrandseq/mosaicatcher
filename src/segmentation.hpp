@@ -605,7 +605,7 @@ int main_segment(int argc, char** argv) {
     // prepare OUTPUT file
     std::ofstream out(conf.f_out.string());
     out << "# Breakpoint file generated via this command: " << std::endl;
-    out << "# > ";
+    out << "# $ ";
     for (unsigned x = 0; x < argc; ++x) out << argv[x] << " ";
     out << std::endl;
     out << "# sample       Sample name" << std::endl;
