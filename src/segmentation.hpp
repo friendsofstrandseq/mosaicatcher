@@ -522,7 +522,7 @@ int main_segment(int argc, char** argv) {
 
 
 
-    // Determine window size & Mean count per sample
+    // Determine window size & Mean count per sample (ignoring None bins)
     unsigned window_size;
     std::vector<float> mean_per_cell(counts.size());
     {
@@ -536,6 +536,7 @@ int main_segment(int argc, char** argv) {
             // Calculate mean without using 'None' bins
             TMeanVarAccumulator<float> mean_acc;
             for (auto j = 0; j < bins.size(); ++j)
+                // None bins are ignored during calculation of mean counts!
                 if (counts[i][j].label != "None")
                     mean_acc((counts[i][j]).watson_count + (counts[i][j]).crick_count);
 
