@@ -265,9 +265,9 @@ Matrix<double> calculate_cost_matrix(std::vector<double> const & data,
     // Iterate per row (k)
     for (unsigned k = 1; k <= max_k && k <= N-1; ++k)                                   // O( maxk * ...
     {
+        // values for a segment of length k
         std::vector<double> cqk(N-k, -1);                                                //           ... N
         std::vector<double> crk(N-k, -1);                                                //           ... N
-
         for (unsigned i = 0; i < N-k; ++i) {                                            //           ... N
             cqk[i] = cq[i+k] - cq[i];
             crk[i] = cr[i+k] - cr[i];
@@ -686,14 +686,13 @@ int main_segment(int argc, char** argv) {
             }
         }
 
-
         // Alternative 3.3
         // Remove 'none' bins from data before running segmentation.
         if (vm.count("remove-none")) {
             unsigned new_len = good_map[chrom+1] - good_map[chrom];
             for(unsigned i = 0; i < data.size(); ++i) {
                 for (unsigned gbin = 0; gbin < new_len; ++gbin) {
-                    data[i][gbin] = data[i][good_bins[good_map[chrom]+gbin] - good_bins[good_map[chrom]]];
+                    data[i][gbin] = data[i][good_bins[good_map[chrom]+gbin] - good_map[chrom]];
                 }
                 data[i].resize(new_len);
             }
