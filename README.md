@@ -1,12 +1,12 @@
-[![Build Status](https://travis-ci.org/friendsofstrandseq/mosaicatcher.svg?branch=develop)](https://travis-ci.org/friendsofstrandseq/mosaicatcher)
+[![Build Status](https://travis-ci.org/friendsofstrandseq/mosaicatcher.svg?branch=master)](https://travis-ci.org/friendsofstrandseq/mosaicatcher)
 
 # Processing Strand-seq data
 
-Structural Variant calling from single-cell Strand-seq* data.
+Structural Variant calling from single-cell Strand-seq data.
 
 This software is in development.
 
-**Falconer E et al., 2012 ([PMID 23042453](https://www.ncbi.nlm.nih.gov/pubmed/23042453))*
+**Falconer E et al., 2012 ([PMID 23042453](https://www.ncbi.nlm.nih.gov/pubmed/23042453))**
 
 
 ## Installation
