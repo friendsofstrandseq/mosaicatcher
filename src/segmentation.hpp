@@ -604,21 +604,6 @@ int main_segment(int argc, char** argv) {
                     }
                 }
             }
-
-            /*
-            // build chrom_map for good bins
-            good_map = std::vector<int32_t>(chrom_map.size() - 1, -1);
-            pos = 0;
-            for (int32_t chr = 0; chr < static_cast<int32_t>(good_map.size()); ++chr) {
-                while (pos < good_bins.size() && bins[good_bins[pos]].chr < chr)
-                    ++pos;
-                // now goodit is either at first occurence of chr, or at the end.
-                if (pos >= good_bins.size()) good_map[chr] = (int32_t)good_bins.size();
-                else good_map[chr] = pos;
-            }
-            // add last element for easy calculation of number of bins
-            good_map.push_back((int32_t)good_bins.size());
-            */
         }
         std::cout << "[Info] Found " << none_reg_local.size() << " 'None' stretches";
         std::cout << ", in total " << num_none_bins << " bins." << std::endl;
