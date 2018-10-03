@@ -242,7 +242,7 @@ Matrix<double> calculate_cost_matrix(std::vector<double> const & data,
     // Rows 0 ... max_k => segment lengths (1 ... max_k+1)
     // Columns 0 ... N  => start position of segment
 
-    double ZERO_THR = 1.1e-10;
+    double ZERO_THR = 1e-10;
 
     unsigned N = (unsigned)data.size();
     std::vector<double> cr(N);
@@ -281,8 +281,13 @@ Matrix<double> calculate_cost_matrix(std::vector<double> const & data,
             G[k-1][j] = cqk[i] - crk[i]*crk[i]/(double)k;
 
             // force small values to zero
-            if (G[k-1][j] < ZERO_THR)
+            if (G[k-1][j] < ZERO_THR) {
+                if (G[k-1][j] < -ZERO_THR)
+                    std::cout << "[Internal] Large negative value in cost matrix: "
+                              << "G[" << k-1 << "][" << j << "] = " << G[k-1][j]
+                              << " --> 0" << std::endl;
                 G[k-1][j] = 0;
+            }
         }
     }
 
