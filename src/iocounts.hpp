@@ -139,10 +139,13 @@ bool read_counts_gzip(TString const & f_in,
 
             // split line
             std::vector<std::string> fields;
-            boost::split(fields, line, boost::is_any_of("\t "));
+            boost::split(fields, line, boost::is_any_of("\t"));
 
             // if not 8 fields, error!
-            if (fields.size() != 8) return 10;
+            if (fields.size() != 8) {
+                std::cerr << "[read_counts_gzip] Line contains != 8 fields: \""  << line << "\"" << std::endl;
+                return false;
+            }
 
             std::string row_chr;
             int32_t     row_start;
