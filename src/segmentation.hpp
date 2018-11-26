@@ -610,6 +610,8 @@ int main_segment(int argc, char** argv) {
                         bins[pos].start = bins[start].start;
                         std::cout << "changed to " << chromosomes[bins[start].chr] << "[" << bins[pos].start << "-" << bins[pos].end << "]" << std::endl;
                     }
+                    // todo: when outputting the adjusted bins, the outputted indices refer to this subset of bins.
+                    // They should, however, refer to the original bins (prior to `None` removal.
                 }
             }
         }
