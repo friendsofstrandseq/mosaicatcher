@@ -2,11 +2,9 @@
 
 # Processing Strand-seq data
 
-Structural Variant calling from single-cell Strand-seq data.
+This software is part of a larger [pipeline](https://github.com/friendsofstrandseq/pipeline) to call structural variants in single-cell Strand-seq data.
 
-This software is in development.
-
-**Falconer E et al., 2012 ([PMID 23042453](https://www.ncbi.nlm.nih.gov/pubmed/23042453))**
+> For optimal integration with [pipeline](https://github.com/friendsofstrandseq/pipeline) version 1.0, please use version `0.3.1-dev`.
 
 
 ## Installation
@@ -56,9 +54,9 @@ Rscript R/qc.R \
 
 ### Data input
 
-Sequencing reads should be supplied in exactly one BAM file per single cell.
-Each BAM file must contain a single read group. Cells are grouped to 
-*samples* based on their `SM` tag.
+* Sequencing reads should be supplied in exactly one BAM file per single cell
+* Each BAM file must contain a single read group (`@RG`). Cells are grouped into *samples* by using the same `SM` tag.
+* BAM files must be sorted and indexed.
 
 
 ## Strand-seq simulations
@@ -75,3 +73,9 @@ Rscript R/qc.R counts.txt.gz counts.pdf
 ```
 
 
+## References
+
+For information on Strand-seq see
+
+* Falconer E *et al.*, 2012 (doi: [10.1038/nmeth.2206](https://doi.org/10.1038/nmeth.2206))
+* Sanders AD *et al.*, 2017 (doi: [10.1038/nprot.2017.029](https://doi.org/10.1038/nprot.2017.029))
