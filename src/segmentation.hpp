@@ -588,7 +588,7 @@ int main_segment(int argc, char** argv) {
                 }
                 // iterate through consecutive stretch of None
                 unsigned start = pos;
-                while (counts[0][pos].label == "None" && pos < chrom_map[chrom+1])
+                while (pos < chrom_map[chrom+1] && counts[0][pos].label == "None")
                     ++pos;
                 none_reg_local[chrom].push_back(std::make_pair(start - chrom_map[chrom], pos - 1 - chrom_map[chrom]));
                 num_none_bins += pos - start;
@@ -603,20 +603,19 @@ int main_segment(int argc, char** argv) {
                     if (start != chrom_map[chrom]) {
                         // add this None stretch to the interval left of it
                         bins[start-1].end = bins[pos-1].end;
-                        std::cout << "changed to " << chromosomes[bins[start].chr] << "[" << bins[start-1].start << "-" << bins[start-1].end << "]" << std::endl;
+                        std::cout << "[Debug] merge " << pos - start << " bins to " << chromosomes[bins[start].chr] << "[" << bins[start-1].start << "-" << bins[start-1].end << "]" << std::endl;
                     }
                     // If it is at the start, though, count it th the interval on the right
                     else {
                         bins[pos].start = bins[start].start;
-                        std::cout << "changed to " << chromosomes[bins[start].chr] << "[" << bins[pos].start << "-" << bins[pos].end << "]" << std::endl;
+                        std::cout << "[Debug] merge " << pos - start << " bins to " << chromosomes[bins[pos].chr] << "[" << bins[pos].start << "-" << bins[pos].end << "]" << std::endl;
                     }
                     // todo: when outputting the adjusted bins, the outputted indices refer to this subset of bins.
                     // They should, however, refer to the original bins (prior to `None` removal.
                 }
             }
+        std::cout << "[Info] Found " << none_reg_local[chrom].size() << " 'None' stretches on " << chromosomes[chrom] << ", in total " << num_none_bins << " bins." << std::endl;
         }
-        std::cout << "[Info] Found " << none_reg_local.size() << " 'None' stretches";
-        std::cout << ", in total " << num_none_bins << " bins." << std::endl;
 
 
         // Alternative 3.3
