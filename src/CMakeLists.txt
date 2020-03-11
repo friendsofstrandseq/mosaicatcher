@@ -21,22 +21,12 @@ include_directories (${Boost_INCLUDE_DIR})
 
 
 
-### Link HTSlib
-
-ExternalProject_Add(htslib
-    PREFIX ${CMAKE_BINARY_DIR}/htslib
-    GIT_REPOSITORY "https://github.com/samtools/htslib.git"
-    GIT_TAG "1.3.1"
-    UPDATE_COMMAND ""
-    BUILD_IN_SOURCE 1
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND make
-    INSTALL_COMMAND make install prefix=${CMAKE_BINARY_DIR}/htslib
-    LOG_DOWNLOAD 1
-)
-link_directories (${CMAKE_BINARY_DIR}/htslib/lib)
-include_directories (${CMAKE_BINARY_DIR}/htslib/include)
-
+### Link HTSlib using PackageConfig
+find_package(PkgConfig REQUIRED) 
+pkg_check_modules(HTSlib REQUIRED htslib) 
+set(HTSlib_LIBRARIES "${HTSlib_LDFLAGS}") 
+message(STATUS "   HTSlib include dirs: ${HTSlib_INCLUDE_DIRS}") 
+message(STATUS "   HTSlib libraries: ${HTSlib_LIBRARIES}")
 
 
 ### Set version
@@ -105,8 +95,6 @@ set(HEADER_FILES
 add_executable (mosaic main.cpp ${HEADER_FILES})
 target_link_libraries (mosaic LINK_PUBLIC ${Boost_LIBRARIES})
 target_link_libraries (mosaic LINK_PUBLIC hts)
-add_dependencies (mosaic htslib)
-
 
 ### Doxygen API documentation
 find_package(Doxygen)
