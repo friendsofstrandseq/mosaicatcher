@@ -11,10 +11,10 @@ This software is part of a larger [pipeline](https://github.com/friendsofstrands
 
 Mosaicatcher can be built using [Cmake](https://cmake.org/) (v3.0) on **Linux** and **MacOS**. 
 
-It relies on two external dependecies
+It relies on two external dependecies, which should both be installed on your system:
 
- * [boost libraries](http://www.boost.org/) >= 1.50. This needs to be installed on your system
- * [HTSlib](https://github.com/samtools/htslib) >= 1.3.1. Cmake should be able to install this for you
+ * [boost libraries](http://www.boost.org/) >= 1.50.
+ * [HTSlib](https://github.com/samtools/htslib) >= 1.3.1.
 
 ```
 git clone https://github.com/friendsofstrandseq/mosaicatcher.git
