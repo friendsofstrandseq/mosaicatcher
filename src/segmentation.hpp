@@ -242,7 +242,7 @@ Matrix<double> calculate_cost_matrix(std::vector<double> const & data,
     // Rows 0 ... max_k => segment lengths (1 ... max_k+1)
     // Columns 0 ... N  => start position of segment
 
-    double ZERO_THR = 1.1e-10;
+    double ZERO_THR = 1e-10;
 
     unsigned N = (unsigned)data.size();
     std::vector<double> cr(N);
@@ -259,15 +259,23 @@ Matrix<double> calculate_cost_matrix(std::vector<double> const & data,
     Matrix<double> G(max_k, std::vector<double>(N, -1));                                  // O(N * maxk)
 
     // Initialization for segments of lengths 1...max_k at position 0.
-    for (unsigned k = 0; k < max_k; ++k)                                                // O(maxk)
+    for (unsigned k = 0; k < max_k; ++k) {                                               // O(maxk)
         G[k][0] = cq[k] - cr[k]*cr[k]/(double)(k+1);
+        if (G[k][0] < ZERO_THR) {
+            if (G[k][0] < -ZERO_THR)
+                std::cout << "[Internal] Large negative value in cost matrix: "
+                          << "G[" << k << "][" << 0 << "] = " << G[k][0]
+                          << " --> 0" << std::endl;
+	    G[k][0] = 0;
+	}
+    }
 
     // Iterate per row (k)
     for (unsigned k = 1; k <= max_k && k <= N-1; ++k)                                   // O( maxk * ...
     {
+        // values for a segment of length k
         std::vector<double> cqk(N-k, -1);                                                //           ... N
         std::vector<double> crk(N-k, -1);                                                //           ... N
-
         for (unsigned i = 0; i < N-k; ++i) {                                            //           ... N
             cqk[i] = cq[i+k] - cq[i];
             crk[i] = cr[i+k] - cr[i];
@@ -281,8 +289,13 @@ Matrix<double> calculate_cost_matrix(std::vector<double> const & data,
             G[k-1][j] = cqk[i] - crk[i]*crk[i]/(double)k;
 
             // force small values to zero
-            if (G[k-1][j] < ZERO_THR)
+            if (G[k-1][j] < ZERO_THR) {
+                if (G[k-1][j] < -ZERO_THR)
+                    std::cout << "[Internal] Large negative value in cost matrix: "
+                              << "G[" << k-1 << "][" << j << "] = " << G[k-1][j]
+                              << " --> 0" << std::endl;
                 G[k-1][j] = 0;
+            }
         }
     }
 
@@ -522,7 +535,7 @@ int main_segment(int argc, char** argv) {
 
 
 
-    // Determine window size & Mean count per sample
+    // Determine window size & Mean count per sample (ignoring None bins)
     unsigned window_size;
     std::vector<float> mean_per_cell(counts.size());
     {
@@ -536,6 +549,7 @@ int main_segment(int argc, char** argv) {
             // Calculate mean without using 'None' bins
             TMeanVarAccumulator<float> mean_acc;
             for (auto j = 0; j < bins.size(); ++j)
+                // None bins are ignored during calculation of mean counts!
                 if (counts[i][j].label != "None")
                     mean_acc((counts[i][j]).watson_count + (counts[i][j]).crick_count);
 
@@ -558,7 +572,7 @@ int main_segment(int argc, char** argv) {
     //
     std::vector<std::vector<std::pair<unsigned,unsigned>>> none_reg_local(chromosomes.size());
     std::vector<unsigned> good_bins;
-    std::vector<int32_t> good_map;
+    //std::vector<int32_t> good_map;
     {
 
         // Finding 'none' stretches
@@ -574,29 +588,60 @@ int main_segment(int argc, char** argv) {
                 }
                 // iterate through consecutive stretch of None
                 unsigned start = pos;
-                while (counts[0][pos].label == "None" && pos < chrom_map[chrom+1])
+                while (pos < chrom_map[chrom+1] && counts[0][pos].label == "None")
                     ++pos;
                 none_reg_local[chrom].push_back(std::make_pair(start - chrom_map[chrom], pos - 1 - chrom_map[chrom]));
                 num_none_bins += pos - start;
-            }
 
-            // build chrom_map for good bins
-            good_map = std::vector<int32_t>(chrom_map.size() - 1, -1);
-            pos = 0;
-            for (int32_t chr = 0; chr < static_cast<int32_t>(good_map.size()); ++chr) {
-                while (pos < good_bins.size() && bins[good_bins[pos]].chr < chr)
-                    ++pos;
-                // now goodit is either at first occurence of chr, or at the end.
-                if (pos >= good_bins.size()) good_map[chr] = (int32_t)good_bins.size();
-                else good_map[chr] = pos;
+                // adjust boundaries before removing None stretches...
+                if (vm.count("remove-none")) {
+                    // first make sure that the current None stretch does not span the entire chromosome
+                    if (start == chrom_map[chrom] && pos == chrom_map[chrom+1]) {
+                        std::cerr << "None stretch seems to span the whole chromosome" << std::endl;
+                    }
+                    // if this None stretch is not at the start of the chromosome ...
+                    if (start != chrom_map[chrom]) {
+                        // add this None stretch to the interval left of it
+                        bins[start-1].end = bins[pos-1].end;
+                        std::cout << "[Debug] merge " << pos - start << " bins to " << chromosomes[bins[start].chr] << "[" << bins[start-1].start << "-" << bins[start-1].end << "]" << std::endl;
+                    }
+                    // If it is at the start, though, count it th the interval on the right
+                    else {
+                        bins[pos].start = bins[start].start;
+                        std::cout << "[Debug] merge " << pos - start << " bins to " << chromosomes[bins[pos].chr] << "[" << bins[pos].start << "-" << bins[pos].end << "]" << std::endl;
+                    }
+                    // todo: when outputting the adjusted bins, the outputted indices refer to this subset of bins.
+                    // They should, however, refer to the original bins (prior to `None` removal.
+                }
             }
-            // add last element for easy calculation of number of bins
-            good_map.push_back((int32_t)good_bins.size());
+        std::cout << "[Info] Found " << none_reg_local[chrom].size() << " 'None' stretches on " << chromosomes[chrom] << ", in total " << num_none_bins << " bins." << std::endl;
         }
-        std::cout << "[Info] Found " << none_reg_local.size() << " 'None' stretches";
-        std::cout << ", in total " << num_none_bins << " bins." << std::endl;
-    }
 
+
+        // Alternative 3.3
+        //     "--remove-none"
+        // Remove 'none' bins from data before running segmentation.
+        if (vm.count("remove-none")) {
+
+            // remove bins
+            for (unsigned j = 0; j < good_bins.size(); ++j)
+                bins[j] = bins[good_bins[j]];
+            bins.resize(good_bins.size());
+
+            // remove data values
+            for (unsigned i = 0; i < counts.size(); ++i) {
+                for (unsigned j = 0; j < good_bins.size(); ++j)
+                    counts[i][j] = counts[i][good_bins[j]];
+                counts[i].resize(good_bins.size());
+            }
+
+            // remake chrom_map
+            chrom_map.resize(good_bins.size());
+            make_chrom_map(bins, chrom_map);
+            chrom_map.push_back(good_bins.size());
+        }
+
+    }
 
 
 
@@ -605,7 +650,7 @@ int main_segment(int argc, char** argv) {
     // prepare OUTPUT file
     std::ofstream out(conf.f_out.string());
     out << "# Breakpoint file generated via this command: " << std::endl;
-    out << "# > ";
+    out << "# $ ";
     for (unsigned x = 0; x < argc; ++x) out << argv[x] << " ";
     out << std::endl;
     out << "# sample       Sample name" << std::endl;
@@ -683,20 +728,6 @@ int main_segment(int argc, char** argv) {
                                [](Counter<double> const & c){return (double) c.crick_count;});
                 data.push_back(tmp);
             }
-        }
-
-
-        // Alternative 3.3
-        // Remove 'none' bins from data before running segmentation.
-        if (vm.count("remove-none")) {
-            unsigned new_len = good_map[chrom+1] - good_map[chrom];
-            for(unsigned i = 0; i < data.size(); ++i) {
-                for (unsigned gbin = 0; gbin < new_len; ++gbin) {
-                    data[i][gbin] = data[i][good_bins[good_map[chrom]+gbin] - good_bins[good_map[chrom]]];
-                }
-                data[i].resize(new_len);
-            }
-            N = new_len;
         }
 
 
@@ -785,25 +816,6 @@ int main_segment(int argc, char** argv) {
             continue;
         }
 
-        // Alternative 3.3
-        // Transform coordinates in `breakpoints` back to orignal coordinates
-        if (vm.count("remove-none")) {
-            for (unsigned cp = 0; cp < max_cp; ++cp) {
-                for (unsigned k = 0; k <= cp; ++k) {
-
-                    unsigned gbin_pos = good_map[chrom] + breakpoints[cp][k];
-                    assert(gbin_pos <= good_bins.size());
-
-                    // map back from bin in "good_bin space" to orginal space
-
-                    if (gbin_pos == good_map[chrom+1])
-                        // special case of going across the chromosome
-                        breakpoints[cp][k] = chrom_map[chrom+1] - chrom_map[chrom];
-                    else
-                        breakpoints[cp][k] = good_bins[gbin_pos] - chrom_map[chrom];
-                }
-            }
-        }
 
         // number of none bins (for output)
         unsigned num_none = 0;
