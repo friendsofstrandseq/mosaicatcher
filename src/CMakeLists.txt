@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.1)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(PKG_CONFIG_EXECUTABLE "$BUILD_PREFIX/bin/pkg-config")
+# set(PKG_CONFIG_EXECUTABLE "$BUILD_PREFIX/bin/pkg-config")
 # set(PKG_CONFIG_EXECUTABLE "/home/tweber/.conda/envs/strandseqnation/bin/pkg-config")
 # set(HTSlib_LIBRARIES "${LDFLAGS}") 
 project (Mosaicatcher CXX)
@@ -20,16 +20,34 @@ endif("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
 ## Link Boost
 find_package(Boost 1.50 COMPONENTS system date_time filesystem iostreams program_options REQUIRED)
 message(${Boost_INCLUDE_DIR})
+# message(${CFLAGS})
 include_directories (${Boost_INCLUDE_DIR})
+# include_directories (${CFLAGS})
 
 
-## Link HTSlib using PackageConfig
-find_package(PkgConfig REQUIRED) 
+ExternalProject_Add(htslib
+    PREFIX ${CMAKE_BINARY_DIR}/htslib
+    GIT_REPOSITORY "https://github.com/samtools/htslib.git"
+    GIT_TAG "1.3.1"
+    UPDATE_COMMAND ""
+    BUILD_IN_SOURCE 1
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND make
+    INSTALL_COMMAND make install prefix=${CMAKE_BINARY_DIR}/htslib
+    LOG_DOWNLOAD 1
+)
+link_directories (${CMAKE_BINARY_DIR}/htslib/lib)
+include_directories (${CMAKE_BINARY_DIR}/htslib/include)
 
-pkg_check_modules(HTSlib REQUIRED htslib) 
-# message(STATUS "   HTSlib include dirs: ${HTSlib_INCLUDE_DIRS}") 
-message(STATUS "   HTSlib include dirs: ${CPATH}") 
-message(STATUS "   HTSlib libraries: ${LDFLAGS}")
+# ## Link HTSlib using PackageConfig
+# find_package(PkgConfig REQUIRED) 
+
+# pkg_check_modules(HTSlib REQUIRED htslib) 
+# # message(STATUS "   HTSlib include dirs: ${HTSlib_INCLUDE_DIRS}") 
+# message(STATUS "   HTSlib include dirs: ${CPATH}") 
+# message(STATUS "   HTSlib libraries: ${LDFLAGS}")
+
+
 ### Set version
 # Get the current working branch
 execute_process(
