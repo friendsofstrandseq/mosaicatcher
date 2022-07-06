@@ -23,7 +23,7 @@ mkdir build
 cd build
 cmake ../src
 make
-./mosaic --version
+./mosaicatcher --version
 ```
 
 ## Strand-seq read counting and plotting
@@ -35,7 +35,7 @@ Choose between bins of fixed width (`-w`) or predefined bins (`-b`).
 Here is an example for bins with a fixed width of 200kb:
 
 ```
-./build/mosaic count \
+./build/mosaicatcher count \
     -o counts.txt.gz \
     -i counts.info \
     -x data/exclude/GRCh38_full_analysis_set_plus_decoy_hla.exclude \
@@ -66,7 +66,7 @@ Simulate strand-seq data and SVs on the level of binned counts. You are asked to
 Then run
 
 ```
-./build/mosaic simulate \
+./build/mosaicatcher simulate \
     -o counts.txt.gz \
 	 svconfig.txt
 Rscript R/qc.R counts.txt.gz counts.pdf

@@ -1,6 +1,7 @@
 cmake_minimum_required (VERSION 3.1)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE "STATIC_LIBRARY")
 # set(PKG_CONFIG_EXECUTABLE "$BUILD_PREFIX/bin/pkg-config")
 # set(PKG_CONFIG_EXECUTABLE "/home/tweber/.conda/envs/strandseqnation/bin/pkg-config")
 # set(HTSlib_LIBRARIES "${LDFLAGS}") 
@@ -20,32 +21,18 @@ endif("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
 ## Link Boost
 find_package(Boost 1.50 COMPONENTS system date_time filesystem iostreams program_options REQUIRED)
 message(${Boost_INCLUDE_DIR})
-# message(${CFLAGS})
 include_directories (${Boost_INCLUDE_DIR})
-# include_directories (${CFLAGS})
 
 
-ExternalProject_Add(htslib
-    PREFIX ${CMAKE_BINARY_DIR}/htslib
-    GIT_REPOSITORY "https://github.com/samtools/htslib.git"
-    GIT_TAG "1.3.1"
-    UPDATE_COMMAND ""
-    BUILD_IN_SOURCE 1
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND make
-    INSTALL_COMMAND make install prefix=${CMAKE_BINARY_DIR}/htslib
-    LOG_DOWNLOAD 1
-)
+
 link_directories (${CMAKE_BINARY_DIR}/htslib/lib)
 include_directories (${CMAKE_BINARY_DIR}/htslib/include)
 
-# ## Link HTSlib using PackageConfig
-# find_package(PkgConfig REQUIRED) 
-
-# pkg_check_modules(HTSlib REQUIRED htslib) 
-# # message(STATUS "   HTSlib include dirs: ${HTSlib_INCLUDE_DIRS}") 
-# message(STATUS "   HTSlib include dirs: ${CPATH}") 
-# message(STATUS "   HTSlib libraries: ${LDFLAGS}")
+## Link HTSlib using PackageConfig
+find_package(PkgConfig REQUIRED) 
+pkg_check_modules(HTSlib REQUIRED htslib) 
+message(STATUS "   HTSlib include dirs: ${CPATH}") 
+message(STATUS "   HTSlib libraries: ${LDFLAGS}")
 
 
 ### Set version
@@ -65,7 +52,7 @@ execute_process(
 )
 # 1. Set Mosaicatcher version
 set (MOSAIC_VERSION_MAJOR 0)
-set (MOSAIC_VERSION_MINOR 3)
+set (MOSAIC_VERSION_MINOR 3.3)
 # 2. Boost version from find_package (Boost_VERSION)
 # 3. Get HTSlib version from git
 execute_process(
@@ -97,9 +84,9 @@ set(HEADER_FILES
     simulate.hpp
     utils.hpp)
 ### Add executable
-add_executable (mosaic main.cpp ${HEADER_FILES})
-target_link_libraries (mosaic LINK_PUBLIC ${Boost_LIBRARIES})
-target_link_libraries (mosaic LINK_PUBLIC hts)
+add_executable (mosaicatcher main.cpp ${HEADER_FILES})
+target_link_libraries (mosaicatcher LINK_PUBLIC ${Boost_LIBRARIES})
+target_link_libraries (mosaicatcher LINK_PUBLIC hts)
 ### Doxygen API documentation
 find_package(Doxygen)
 if(DOXYGEN_FOUND)
