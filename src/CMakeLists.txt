@@ -52,7 +52,7 @@ execute_process(
 )
 # 1. Set Mosaicatcher version
 set (MOSAIC_VERSION_MAJOR 0)
-set (MOSAIC_VERSION_MINOR 3.3)
+set (MOSAIC_VERSION_MINOR 3.1)
 # 2. Boost version from find_package (Boost_VERSION)
 # 3. Get HTSlib version from git
 execute_process(
