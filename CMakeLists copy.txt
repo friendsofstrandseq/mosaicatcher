@@ -1,54 +1,37 @@
 cmake_minimum_required (VERSION 3.1)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# set(PKG_CONFIG_EXECUTABLE "$BUILD_PREFIX/bin/pkg-config")
-# set(PKG_CONFIG_EXECUTABLE "/home/tweber/.conda/envs/strandseqnation/bin/pkg-config")
-# set(HTSlib_LIBRARIES "${LDFLAGS}") 
+set(CMAKE_TRY_COMPILE_TARGET_TYPE "STATIC_LIBRARY")
+
 project (Mosaicatcher CXX)
 
 
 include(ExternalProject)
 
 
-## Disable in-source builds
+### Disable in-source builds
 if("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
    message(FATAL_ERROR "In-source builds are not allowed. Please choose a different build path.")
 endif("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
 
 
 
-## Link Boost
+### Link Boost
 find_package(Boost 1.50 COMPONENTS system date_time filesystem iostreams program_options REQUIRED)
-message(${Boost_INCLUDE_DIR})
-# message(${CFLAGS})
 include_directories (${Boost_INCLUDE_DIR})
-# include_directories (${CFLAGS})
 
 
-ExternalProject_Add(htslib
-    PREFIX ${CMAKE_BINARY_DIR}/htslib
-    GIT_REPOSITORY "https://github.com/samtools/htslib.git"
-    GIT_TAG "1.3.1"
-    UPDATE_COMMAND ""
-    BUILD_IN_SOURCE 1
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND make
-    INSTALL_COMMAND make install prefix=${CMAKE_BINARY_DIR}/htslib
-    LOG_DOWNLOAD 1
-)
-link_directories (${CMAKE_BINARY_DIR}/htslib/lib)
-include_directories (${CMAKE_BINARY_DIR}/htslib/include)
 
-# ## Link HTSlib using PackageConfig
-# find_package(PkgConfig REQUIRED) 
-
-# pkg_check_modules(HTSlib REQUIRED htslib) 
-# # message(STATUS "   HTSlib include dirs: ${HTSlib_INCLUDE_DIRS}") 
-# message(STATUS "   HTSlib include dirs: ${CPATH}") 
-# message(STATUS "   HTSlib libraries: ${LDFLAGS}")
+### Link HTSlib using PackageConfig
+find_package(PkgConfig REQUIRED) 
+pkg_check_modules(HTSlib REQUIRED htslib) 
+set(HTSlib_LIBRARIES "${HTSlib_LDFLAGS}") 
+message(STATUS "   HTSlib include dirs: ${HTSlib_INCLUDE_DIRS}") 
+message(STATUS "   HTSlib libraries: ${HTSlib_LIBRARIES}")
 
 
 ### Set version
+
 # Get the current working branch
 execute_process(
   COMMAND git rev-parse --abbrev-ref HEAD
@@ -56,6 +39,7 @@ execute_process(
   OUTPUT_VARIABLE GIT_BRANCH
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+
 # Get the latest abbreviated commit hash of the working branch
 execute_process(
   COMMAND git log -1 --format=%h
@@ -63,10 +47,14 @@ execute_process(
   OUTPUT_VARIABLE GIT_COMMIT_HASH
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+
+
 # 1. Set Mosaicatcher version
 set (MOSAIC_VERSION_MAJOR 0)
 set (MOSAIC_VERSION_MINOR 3)
+
 # 2. Boost version from find_package (Boost_VERSION)
+
 # 3. Get HTSlib version from git
 execute_process(
     COMMAND git describe --always
@@ -75,15 +63,22 @@ execute_process(
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 set(HTSLIB_VERSION "1.3.1 ${HTSLIB_VERSION}")
+
 # 4. write version.hpp file
 configure_file (
   "${PROJECT_SOURCE_DIR}/version.hpp.in"
   "${PROJECT_BINARY_DIR}/version.hpp"
   )
+
 # 5. Include build direcotry so version.hpp can be found
 include_directories("${PROJECT_BINARY_DIR}") # to find version.hpp
+
+
+
 ### Compiler flags
 add_definitions(-Wall -pedantic -Wno-unknown-pragmas)
+
+ 
 
 set(HEADER_FILES
     count.hpp
@@ -96,10 +91,12 @@ set(HEADER_FILES
     segmentation.hpp
     simulate.hpp
     utils.hpp)
+
 ### Add executable
 add_executable (mosaic main.cpp ${HEADER_FILES})
 target_link_libraries (mosaic LINK_PUBLIC ${Boost_LIBRARIES})
 target_link_libraries (mosaic LINK_PUBLIC hts)
+
 ### Doxygen API documentation
 find_package(Doxygen)
 if(DOXYGEN_FOUND)
